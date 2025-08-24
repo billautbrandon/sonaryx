@@ -153,15 +153,8 @@ class ScheduledReleaseService {
             day: 'numeric'
         });
 
-        if (todayReleases.length === 0) {
-            // Send "no new releases today" message
-            const message = `🌅 **Daily Release Report** - ${currentDate}\n\n` +
-                          `📊 Checked **${totalArtists}** subscribed artists\n` +
-                          `📭 No new releases today\n\n` +
-                          `💡 Use \`/subscribe [artist]\` to add more artists!`;
-            
-            await this.discordService.sendMessage(message);
-        } else {
+        // Only send messages if there are releases (avoid spam)
+        if (todayReleases.length > 0) {
             // Send header message
             const headerMessage = `🌅 **Daily Release Report** - ${currentDate}\n\n` +
                                  `📊 Checked **${totalArtists}** artists\n` +
@@ -180,6 +173,8 @@ class ScheduledReleaseService {
             // Send footer
             const footerMessage = `✅ Daily release check completed!`;
             await this.discordService.sendMessage(footerMessage);
+        } else {
+            console.log(`📭 No releases from today - not sending any Discord messages (avoiding spam)`);
         }
     }
 

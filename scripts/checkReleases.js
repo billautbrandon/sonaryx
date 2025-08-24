@@ -105,11 +105,11 @@ class ReleaseChecker {
                     await new Promise(resolve => setTimeout(resolve, 1000)); // Small delay between messages
                 }
                 
-                // Send completion message
-                await this.sendDiscordMessage(completionMessage);
-                
-                if (!hasNewReleases && artists.length > 0) {
-                    await this.sendDiscordMessage('ℹ️ No new releases found for any subscribed artists.');
+                // Send completion message only if there were releases
+                if (hasNewReleases) {
+                    await this.sendDiscordMessage(completionMessage);
+                } else {
+                    console.log('📭 No new releases found - not sending completion message to avoid spam');
                 }
             }
         } catch (error) {
@@ -142,14 +142,21 @@ class ReleaseChecker {
             console.log(`   🎧 Tracks: ${latestRelease.total_tracks}`);
             console.log(`   🔗 Spotify: ${latestRelease.external_urls.spotify}`);
             
-            // Check if this is a new release AND if it's from today or newer
-            const isNewRelease = artist.lastReleaseId !== latestRelease.id;
+            // Always check date first - only show releases from today or newer
             const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD format
             const isTodayOrNewer = this.isReleaseDateTodayOrNewer(latestRelease.release_date, today);
             
+            // Check if this is a new release (different from stored ID)
+            const isNewRelease = artist.lastReleaseId !== latestRelease.id;
+            
+            // Always update the database with the latest release ID to avoid re-checking old releases
+            if (isNewRelease) {
+                await this.databaseService.updateArtistLastRelease(artist.id, latestRelease.id);
+            }
+            
+            // Only show releases that are from today or newer AND are new
             if (isNewRelease && isTodayOrNewer) {
                 console.log(`   🆕 NEW RELEASE DETECTED (from today or newer)!`);
-                await this.databaseService.updateArtistLastRelease(artist.id, latestRelease.id);
                 
                 // Return formatted message for Discord
                 return `🆕 **NEW RELEASE!**\n` +
@@ -160,7 +167,9 @@ class ReleaseChecker {
                        `🔗 **Listen**: ${latestRelease.external_urls.spotify}`;
             } else if (isNewRelease && !isTodayOrNewer) {
                 console.log(`   ⏰ New release found but it's from before today (${latestRelease.release_date}) - skipping`);
-                await this.databaseService.updateArtistLastRelease(artist.id, latestRelease.id);
+                return null;
+            } else if (!isTodayOrNewer) {
+                console.log(`   ℹ️  Latest release is from before today (${latestRelease.release_date}) - no current releases to show`);
                 return null;
             } else {
                 console.log(`   ℹ️  No new releases since last check`);
