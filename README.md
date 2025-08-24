@@ -1,27 +1,21 @@
 # 🎶 Sonaryx
 
-**Sonaryx** est un bot Discord qui agit comme un sonar musical : il détecte automatiquement les nouvelles sorties d’artistes Spotify (singles, EPs, albums) et les partage dans un salon Discord dédié.  
+**Sonaryx** is a Discord bot that acts like a music sonar: it detects new releases from Spotify artists (singles, EPs, albums) and shares them automatically in a dedicated Discord channel.
 
 ---
 
-## ✨ Fonctionnalités
-- Abonnement à des artistes Spotify.
-- Vérification régulière des nouvelles sorties via l’API Spotify.
-- Publication automatique des liens Spotify dans un salon spécifique Discord.
-- Hébergé sur un VPS (ou toute autre plateforme compatible Node.js).
+## 🛠️ Tech Stack
+- [TypeScript](https://www.typescriptlang.org/)  
+- [discord.js](https://discord.js.org/)  
+- [Spotify Web API](https://developer.spotify.com/documentation/web-api/)  
+- [Prisma](https://www.prisma.io/) + [SQLite](https://www.sqlite.org/)  
+- [node-cron](https://www.npmjs.com/package/node-cron)  
 
 ---
 
-## 🚀 Installation
+## 🚀 Getting Started
 
-### Prérequis
-- [Node.js](https://nodejs.org/) v18+
-- [npm](https://www.npmjs.com/)
-- Un bot Discord ([guide pour en créer un](https://discordjs.guide/preparations/setting-up-a-bot-application.html))
-- Une application Spotify (client ID & secret depuis [Spotify Developer](https://developer.spotify.com/dashboard))
-
-### Étapes
-Clone le projet :
+Clone the repository:
 ```bash
-git clone https://github.com/<ton-user>/sonaryx.git
+git clone https://github.com/<your-username>/sonaryx.git
 cd sonaryx
