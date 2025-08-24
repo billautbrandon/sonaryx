@@ -109,6 +109,9 @@ class ReleaseChecker {
                 if (hasNewReleases) {
                     await this.sendDiscordMessage(completionMessage);
                 } else {
+                    await this.sendDiscordMessage('✅ Release check completed!');
+                    await this.sendDiscordMessage('ℹ️ No new releases found for any subscribed artists.');
+
                     console.log('📭 No new releases found - not sending completion message to avoid spam');
                 }
             }
