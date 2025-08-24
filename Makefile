@@ -49,6 +49,10 @@ check-releases-local: ## Check releases using local database (for development)
 	@echo "🔍 Checking releases using local database..."
 	node scripts/checkReleases.js
 
+daily-check: ## Manually trigger daily release check (for testing)
+	@echo "📅 Triggering manual daily release check..."
+	docker exec sonaryx-server node scripts/testDailyCheck.js
+
 # Utility commands
 clean: ## Clean up generated files and containers
 	docker-compose down --volumes --remove-orphans 2>/dev/null || true

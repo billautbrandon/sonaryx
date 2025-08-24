@@ -4,12 +4,14 @@ const DiscordService = require('./services/discordService');
 const SpotifyService = require('./services/spotifyService');
 const DatabaseService = require('./services/databaseService');
 const MessageQueueService = require('./services/messageQueueService');
+const ScheduledReleaseService = require('./services/scheduledReleaseService');
 
 // Initialize services
 const databaseService = new DatabaseService();
 const spotifyService = new SpotifyService();
 const discordService = new DiscordService(databaseService, spotifyService);
 const messageQueueService = new MessageQueueService(discordService);
+const scheduledReleaseService = new ScheduledReleaseService(databaseService, spotifyService, discordService);
 
 async function initializeBot() {
     console.log('🚀 Starting Sonaryx Bot...');
@@ -38,8 +40,12 @@ async function initializeBot() {
     // Start message queue processor
     await messageQueueService.start();
     
+    // Start daily release scheduler
+    scheduledReleaseService.start();
+    
     console.log('✅ All services initialized successfully!');
     console.log('🎵 Bot is ready to accept commands!');
+    console.log('📅 Daily release checks scheduled for 00:00 UTC');
     console.log('📝 Available commands:');
     console.log('   /subscribe [artist_name] - Subscribe to an artist');
     console.log('   /unsubscribe [artist_id] - Unsubscribe from an artist');
@@ -49,6 +55,7 @@ async function initializeBot() {
 // Handle graceful shutdown
 process.on('SIGINT', async () => {
     console.log('\n🛑 Shutting down Sonaryx Bot...');
+    scheduledReleaseService.stop();
     await messageQueueService.stop();
     await databaseService.disconnect();
     process.exit(0);
@@ -56,6 +63,7 @@ process.on('SIGINT', async () => {
 
 process.on('SIGTERM', async () => {
     console.log('\n🛑 Shutting down Sonaryx Bot...');
+    scheduledReleaseService.stop();
     await messageQueueService.stop();
     await databaseService.disconnect();
     process.exit(0);

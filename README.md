@@ -8,6 +8,7 @@
 
 - 🎵 **Artist Subscriptions**: Subscribe to any Spotify artist via Discord commands
 - 🤖 **Discord Slash Commands**: Easy-to-use `/subscribe`, `/unsubscribe`, and `/list` commands  
+- 📅 **Daily Automatic Checks**: Automatically checks for new releases every day at 00:00 UTC
 - 🔍 **Manual Release Checking**: Check all subscribed artists' latest releases on demand
 - 📊 **SQLite Database**: Persistent artist subscriptions with Prisma ORM
 - 🐳 **Docker Support**: Full containerized setup
@@ -126,7 +127,8 @@ sonaryx/
 ```bash
 make help           # Show all available commands
 make start          # Start bot locally
-make check-releases # Check releases manually
+make check-releases # Check releases manually (sends to Discord)
+make daily-check    # Trigger daily check manually (for testing)
 make db-studio      # Open database browser
 ```
 
@@ -151,8 +153,16 @@ make db-reset       # Reset database (⚠️ deletes all data)
 1. **Setup**: Install dependencies and configure environment
 2. **Start Bot**: Run the Discord bot to accept commands
 3. **Subscribe**: Use `/subscribe` to add artists you want to monitor
-4. **Check Releases**: Run `make check-releases` to see latest releases
-5. **Manage**: Use `/list` and `/unsubscribe` to manage subscriptions
+4. **Automatic Daily Checks**: Bot automatically checks for new releases every day at 00:00 UTC
+5. **Manual Checks**: Run `make check-releases` to see latest releases immediately
+6. **Manage**: Use `/list` and `/unsubscribe` to manage subscriptions
+
+## 📅 Daily Schedule
+
+- **Automatic Check**: Every day at **00:00 UTC**
+- **What it does**: Checks all subscribed artists for new releases
+- **Discord Output**: Sends daily report with any new releases found
+- **No Spam**: Only sends message if there are new releases or daily summary
 
 ---
 
