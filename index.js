@@ -1,24 +1,23 @@
-const cron = require('node-cron');
 require('dotenv').config();
 
 const DiscordService = require('./services/discordService');
 const SpotifyService = require('./services/spotifyService');
+const DatabaseService = require('./services/databaseService');
+const MessageQueueService = require('./services/messageQueueService');
 
 // Initialize services
-const discordService = new DiscordService();
+const databaseService = new DatabaseService();
 const spotifyService = new SpotifyService();
-
-// Configuration
-const ARTIST_NAME = 'NMIXX';
-const CRON_SCHEDULE = '*/10 * * * * *'; // Every 10 seconds
+const discordService = new DiscordService(databaseService, spotifyService);
+const messageQueueService = new MessageQueueService(discordService);
 
 async function initializeBot() {
     console.log('🚀 Starting Sonaryx Bot...');
     
-    // Initialize Discord
-    const discordReady = await discordService.login();
-    if (!discordReady) {
-        console.error('❌ Failed to initialize Discord service');
+    // Initialize Database
+    const databaseReady = await databaseService.connect();
+    if (!databaseReady) {
+        console.error('❌ Failed to initialize database');
         process.exit(1);
     }
 
@@ -29,76 +28,36 @@ async function initializeBot() {
         process.exit(1);
     }
 
-    // Wait a moment for Discord client to be fully ready
-    setTimeout(() => {
-        startReleaseMonitoring();
-    }, 2000);
-}
-
-function startReleaseMonitoring() {
-    console.log(`🎵 Starting release monitoring for artist: ${ARTIST_NAME}`);
-    console.log(`⏰ Checking every 10 seconds...`);
-
-    // Schedule the release check
-    cron.schedule(CRON_SCHEDULE, async () => {
-        await checkAndSendLatestRelease();
-    });
-
-    // Send initial release immediately
-    setTimeout(async () => {
-        await sendCurrentLatestRelease();
-    }, 1000);
-}
-
-async function checkAndSendLatestRelease() {
-    try {
-        console.log(`🔍 Checking for new releases from ${ARTIST_NAME}...`);
-        
-        const newRelease = await spotifyService.checkForNewRelease(ARTIST_NAME);
-        
-        if (newRelease) {
-            console.log(`🆕 New release found: ${newRelease.name}`);
-            const success = await discordService.sendSpotifyRelease(newRelease);
-            
-            if (success) {
-                console.log('✅ Successfully sent new release notification');
-            }
-        } else {
-            console.log(`ℹ️  No new releases found for ${ARTIST_NAME}`);
-        }
-    } catch (error) {
-        console.error('❌ Error in release monitoring:', error.message);
+    // Initialize Discord
+    const discordReady = await discordService.login();
+    if (!discordReady) {
+        console.error('❌ Failed to initialize Discord service');
+        process.exit(1);
     }
-}
 
-async function sendCurrentLatestRelease() {
-    try {
-        console.log(`🎵 Fetching current latest release for ${ARTIST_NAME}...`);
-        
-        const latestRelease = await spotifyService.getArtistLatestRelease(ARTIST_NAME);
-        
-        if (latestRelease) {
-            const success = await discordService.sendSpotifyRelease(latestRelease);
-            
-            if (success) {
-                console.log('✅ Successfully sent current latest release');
-            }
-        } else {
-            await discordService.sendMessage(`❌ Could not fetch latest release for ${ARTIST_NAME}`);
-        }
-    } catch (error) {
-        console.error('❌ Error sending current latest release:', error.message);
-    }
+    // Start message queue processor
+    await messageQueueService.start();
+    
+    console.log('✅ All services initialized successfully!');
+    console.log('🎵 Bot is ready to accept commands!');
+    console.log('📝 Available commands:');
+    console.log('   /subscribe [artist_name] - Subscribe to an artist');
+    console.log('   /unsubscribe [artist_id] - Unsubscribe from an artist');
+    console.log('   /list - List all subscribed artists');
 }
 
 // Handle graceful shutdown
-process.on('SIGINT', () => {
+process.on('SIGINT', async () => {
     console.log('\n🛑 Shutting down Sonaryx Bot...');
+    await messageQueueService.stop();
+    await databaseService.disconnect();
     process.exit(0);
 });
 
-process.on('SIGTERM', () => {
+process.on('SIGTERM', async () => {
     console.log('\n🛑 Shutting down Sonaryx Bot...');
+    await messageQueueService.stop();
+    await databaseService.disconnect();
     process.exit(0);
 });
 

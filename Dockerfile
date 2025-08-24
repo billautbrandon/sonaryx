@@ -17,9 +17,16 @@ COPY . .
 RUN addgroup -g 1001 -S nodejs
 RUN adduser -S nodejs -u 1001
 
+# Create data directory for SQLite database
+RUN mkdir -p /app/data /app/logs
+
 # Change ownership of the app directory to the nodejs user
 RUN chown -R nodejs:nodejs /app
+
+# Initialize the database as the nodejs user
 USER nodejs
+RUN npx prisma generate
+RUN npx prisma db push
 
 # Expose the port (not strictly necessary for Discord bots, but good practice)
 EXPOSE 3000

@@ -11,9 +11,12 @@ services:
       - .env
     volumes:
       - ./logs:/app/logs
-      - ./prisma:/app/prisma
+      - sonaryx_data:/app/data
     networks:
       - sonaryx-network
+
+volumes:
+  sonaryx_data:
 
 networks:
   sonaryx-network:
