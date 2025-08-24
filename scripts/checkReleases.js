@@ -142,10 +142,13 @@ class ReleaseChecker {
             console.log(`   🎧 Tracks: ${latestRelease.total_tracks}`);
             console.log(`   🔗 Spotify: ${latestRelease.external_urls.spotify}`);
             
-            // Check if this is a new release
+            // Check if this is a new release AND if it's from today or newer
             const isNewRelease = artist.lastReleaseId !== latestRelease.id;
-            if (isNewRelease) {
-                console.log(`   🆕 NEW RELEASE DETECTED!`);
+            const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD format
+            const isTodayOrNewer = this.isReleaseDateTodayOrNewer(latestRelease.release_date, today);
+            
+            if (isNewRelease && isTodayOrNewer) {
+                console.log(`   🆕 NEW RELEASE DETECTED (from today or newer)!`);
                 await this.databaseService.updateArtistLastRelease(artist.id, latestRelease.id);
                 
                 // Return formatted message for Discord
@@ -155,6 +158,10 @@ class ReleaseChecker {
                        `📅 **Released**: ${latestRelease.release_date}\n` +
                        `🎧 **Tracks**: ${latestRelease.total_tracks}\n` +
                        `🔗 **Listen**: ${latestRelease.external_urls.spotify}`;
+            } else if (isNewRelease && !isTodayOrNewer) {
+                console.log(`   ⏰ New release found but it's from before today (${latestRelease.release_date}) - skipping`);
+                await this.databaseService.updateArtistLastRelease(artist.id, latestRelease.id);
+                return null;
             } else {
                 console.log(`   ℹ️  No new releases since last check`);
                 return null;
@@ -163,6 +170,39 @@ class ReleaseChecker {
         } catch (error) {
             console.log(`   ❌ Error checking ${artist.name}: ${error.message}`);
             return null;
+        }
+    }
+
+    isReleaseDateTodayOrNewer(releaseDate, today) {
+        try {
+            // Handle different Spotify date formats
+            let normalizedReleaseDate;
+            
+            if (releaseDate.length === 10) { // YYYY-MM-DD
+                normalizedReleaseDate = releaseDate;
+            } else if (releaseDate.length === 7) { // YYYY-MM
+                // For month-only dates, assume it's the first day of the month
+                normalizedReleaseDate = releaseDate + '-01';
+            } else if (releaseDate.length === 4) { // YYYY
+                // For year-only dates, assume it's January 1st
+                normalizedReleaseDate = releaseDate + '-01-01';
+            } else {
+                console.log(`   ⚠️ Unknown date format: ${releaseDate}`);
+                return false;
+            }
+
+            // Compare dates: only show if release date >= today
+            const releaseDateObj = new Date(normalizedReleaseDate + 'T00:00:00.000Z');
+            const todayObj = new Date(today + 'T00:00:00.000Z');
+            
+            const isToday = releaseDateObj.getTime() >= todayObj.getTime();
+            
+            console.log(`   📅 Date comparison: ${normalizedReleaseDate} >= ${today} = ${isToday}`);
+            
+            return isToday;
+        } catch (error) {
+            console.log(`   ❌ Error comparing dates: ${error.message}`);
+            return false;
         }
     }
 

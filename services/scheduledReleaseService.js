@@ -75,16 +75,14 @@ class ScheduledReleaseService {
                 return null;
             }
 
-            // Check if the release is from TODAY
+            // Check if the release is from TODAY (not before today)
             const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD format
             const releaseDate = latestRelease.release_date;
             
-            // Handle different date formats from Spotify (YYYY-MM-DD, YYYY-MM, YYYY)
-            const isToday = releaseDate === today || 
-                           (releaseDate.length === 7 && releaseDate === today.substring(0, 7)) || // YYYY-MM
-                           (releaseDate.length === 4 && releaseDate === today.substring(0, 4));   // YYYY
+            // Convert release date to comparable format and check if it's today or newer
+            const isTodayOrNewer = this.isReleaseDateTodayOrNewer(releaseDate, today);
             
-            if (isToday) {
+            if (isTodayOrNewer) {
                 console.log(`   🆕 TODAY'S RELEASE: ${latestRelease.name} by ${artist.name} (${releaseDate})`);
                 
                 // Update the database with the new release
@@ -111,6 +109,39 @@ class ScheduledReleaseService {
         } catch (error) {
             console.log(`   ❌ Error checking ${artist.name}: ${error.message}`);
             return null;
+        }
+    }
+
+    isReleaseDateTodayOrNewer(releaseDate, today) {
+        try {
+            // Handle different Spotify date formats
+            let normalizedReleaseDate;
+            
+            if (releaseDate.length === 10) { // YYYY-MM-DD
+                normalizedReleaseDate = releaseDate;
+            } else if (releaseDate.length === 7) { // YYYY-MM
+                // For month-only dates, assume it's the first day of the month
+                normalizedReleaseDate = releaseDate + '-01';
+            } else if (releaseDate.length === 4) { // YYYY
+                // For year-only dates, assume it's January 1st
+                normalizedReleaseDate = releaseDate + '-01-01';
+            } else {
+                console.log(`   ⚠️ Unknown date format: ${releaseDate}`);
+                return false;
+            }
+
+            // Compare dates: only show if release date >= today
+            const releaseDateObj = new Date(normalizedReleaseDate + 'T00:00:00.000Z');
+            const todayObj = new Date(today + 'T00:00:00.000Z');
+            
+            const isToday = releaseDateObj.getTime() >= todayObj.getTime();
+            
+            console.log(`   📅 Date comparison: ${normalizedReleaseDate} >= ${today} = ${isToday}`);
+            
+            return isToday;
+        } catch (error) {
+            console.log(`   ❌ Error comparing dates: ${error.message}`);
+            return false;
         }
     }
 
