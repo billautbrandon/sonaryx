@@ -50,6 +50,15 @@ class DiscordService {
                 ),
             
             new SlashCommandBuilder()
+                .setName('subscribe-id')
+                .setDescription('Subscribe to an artist using their Spotify ID')
+                .addStringOption(option =>
+                    option.setName('artist_id')
+                        .setDescription('The Spotify ID of the artist (e.g., 28ot3wh4oNmoFOdVajibBl)')
+                        .setRequired(true)
+                ),
+            
+            new SlashCommandBuilder()
                 .setName('unsubscribe')
                 .setDescription('Unsubscribe from an artist')
                 .addStringOption(option =>
@@ -96,6 +105,9 @@ class DiscordService {
             switch (commandName) {
                 case 'subscribe':
                     await this.handleSubscribeCommand(interaction);
+                    break;
+                case 'subscribe-id':
+                    await this.handleSubscribeByIdCommand(interaction);
                     break;
                 case 'unsubscribe':
                     await this.handleUnsubscribeCommand(interaction);
@@ -153,6 +165,44 @@ class DiscordService {
         } catch (error) {
             console.error('❌ Error in subscribe command:', error);
             await interaction.editReply(`❌ Error subscribing to "${artistName}": ${error.message}`);
+        }
+    }
+
+    async handleSubscribeByIdCommand(interaction) {
+        const artistId = interaction.options.getString('artist_id');
+        
+        try {
+            // Get artist by Spotify ID
+            console.log(`🔍 Getting artist by ID: ${artistId}`);
+            const artist = await this.spotifyService.getArtistById(artistId);
+            
+            if (!artist) {
+                await interaction.editReply(`❌ Artist with ID "${artistId}" not found on Spotify.\n💡 Make sure you're using a valid Spotify artist ID.`);
+                return;
+            }
+
+            console.log(`✅ Found artist by ID: ${artist.name} (${artist.id})`);
+
+            // Check if already subscribed
+            const isSubscribed = await this.databaseService.isArtistSubscribed(artist.id);
+            if (isSubscribed) {
+                await interaction.editReply(`⚠️ Already subscribed to **${artist.name}** (\`${artist.id}\`)`);
+                return;
+            }
+
+            // Subscribe to the artist
+            await this.databaseService.subscribeToArtist(artist.id, artist.name);
+            console.log(`✅ Subscribed to: ${artist.name} via ID`);
+            
+            await interaction.editReply(
+                `✅ Successfully subscribed to **${artist.name}** via Spotify ID!\n` +
+                `🆔 Artist ID: \`${artist.id}\`\n` +
+                `👥 Followers: ${artist.followers?.total?.toLocaleString() || 'Unknown'}\n` +
+                `🎵 Use \`/list\` to see all subscriptions!`
+            );
+        } catch (error) {
+            console.error('❌ Error in subscribe-id command:', error);
+            await interaction.editReply(`❌ Error subscribing to artist ID "${artistId}": ${error.message}`);
         }
     }
 

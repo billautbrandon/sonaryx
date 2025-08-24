@@ -7,12 +7,13 @@
 ## ✨ Features
 
 - 🎵 **Artist Subscriptions**: Subscribe to any Spotify artist via Discord commands
-- 🤖 **Discord Slash Commands**: Easy-to-use `/subscribe`, `/unsubscribe`, and `/list` commands  
-- 📅 **Daily Automatic Checks**: Automatically checks for new releases every day at 00:00 UTC
+- 🤖 **Discord Slash Commands**: Easy-to-use `/subscribe`, `/subscribe-id`, `/unsubscribe`, and `/list` commands  
+- 📅 **Daily Automatic Checks**: Automatically checks for new releases every day at 09:00 UTC
 - 🔍 **Manual Release Checking**: Check all subscribed artists' latest releases on demand
 - 📊 **SQLite Database**: Persistent artist subscriptions with Prisma ORM
 - 🐳 **Docker Support**: Full containerized setup
-- 🎯 **Smart Detection**: Only notifies about genuinely new releases
+- 🎯 **Smart Detection**: Only shows releases from TODAY's date
+- 📨 **Individual Notifications**: Sends separate message for each new release
 
 ---
 
@@ -77,8 +78,21 @@ make up            # Start with Docker
 
 Once the bot is running, use these slash commands in Discord:
 
+**Subscribe by Name:**
 - `/subscribe NMIXX` - Subscribe to NMIXX's releases
 - `/subscribe "Taylor Swift"` - Subscribe to artists with spaces in name
+
+**Subscribe by Spotify ID:**
+- `/subscribe-id 28ot3wh4oNmoFOdVajibBl` - Subscribe using Spotify artist ID
+- `/subscribe-id 6qqNVTkY8uBg9cP3Jd8DAH` - Useful for foreign language artist names
+
+> 💡 **How to find Spotify Artist ID:**
+> 1. Open Spotify and go to the artist's page
+> 2. Click "Share" → "Copy link to artist"
+> 3. The ID is the part after `/artist/` in the URL
+> 4. Example: `https://open.spotify.com/artist/28ot3wh4oNmoFOdVajibBl` → ID is `28ot3wh4oNmoFOdVajibBl`
+
+**Manage Subscriptions:**
 - `/unsubscribe 28ot3wh4oNmoFOdVajibBl` - Unsubscribe using artist ID
 - `/list` - Show all subscribed artists
 
@@ -153,16 +167,17 @@ make db-reset       # Reset database (⚠️ deletes all data)
 1. **Setup**: Install dependencies and configure environment
 2. **Start Bot**: Run the Discord bot to accept commands
 3. **Subscribe**: Use `/subscribe` to add artists you want to monitor
-4. **Automatic Daily Checks**: Bot automatically checks for new releases every day at 00:00 UTC
+4. **Automatic Daily Checks**: Bot automatically checks for new releases every day at 09:00 UTC
 5. **Manual Checks**: Run `make check-releases` to see latest releases immediately
 6. **Manage**: Use `/list` and `/unsubscribe` to manage subscriptions
 
 ## 📅 Daily Schedule
 
-- **Automatic Check**: Every day at **00:00 UTC**
-- **What it does**: Checks all subscribed artists for new releases
-- **Discord Output**: Sends daily report with any new releases found
-- **No Spam**: Only sends message if there are new releases or daily summary
+- **Automatic Check**: Every day at **09:00 UTC** (9:00 AM)
+- **What it does**: Checks all subscribed artists for releases from TODAY only
+- **Discord Output**: Sends individual message for EACH new release found today
+- **Smart Filtering**: Only shows releases with today's date (ignores older releases)
+- **No Spam**: Only sends messages for actual releases from today
 
 ---
 

@@ -52,6 +52,22 @@ class SpotifyService {
         }
     }
 
+    async getArtistById(artistId) {
+        if (!this.isAuthenticated) {
+            const authenticated = await this.authenticate();
+            if (!authenticated) return null;
+        }
+
+        try {
+            const artistResult = await this.spotifyApi.getArtist(artistId);
+            console.log(`✅ Found artist by ID: ${artistResult.body.name} (${artistId})`);
+            return artistResult.body;
+        } catch (error) {
+            console.error(`❌ Error getting artist by ID "${artistId}":`, error.message);
+            return null;
+        }
+    }
+
     async getArtistLatestRelease(artistName) {
         try {
             const artist = await this.searchArtist(artistName);

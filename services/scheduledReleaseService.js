@@ -9,16 +9,16 @@ class ScheduledReleaseService {
     }
 
     start() {
-        // Schedule daily check at 00:00 (midnight)
-        this.cronJob = cron.schedule('0 0 * * *', async () => {
-            console.log('🕛 Daily release check started at', new Date().toISOString());
+        // Schedule daily check at 09:00 (9 AM)
+        this.cronJob = cron.schedule('0 9 * * *', async () => {
+            console.log('🌅 Daily release check started at', new Date().toISOString());
             await this.performDailyReleaseCheck();
         }, {
             scheduled: true,
             timezone: "UTC"
         });
 
-        console.log('✅ Daily release checker scheduled for 00:00 UTC');
+        console.log('✅ Daily release checker scheduled for 09:00 UTC');
     }
 
     stop() {
@@ -40,23 +40,23 @@ class ScheduledReleaseService {
                 return;
             }
 
-            console.log(`🔍 Checking ${artists.length} subscribed artists for new releases...`);
+            console.log(`🔍 Checking ${artists.length} subscribed artists for TODAY's releases...`);
 
-            const newReleases = [];
+            const todayReleases = [];
             
             for (const artist of artists) {
-                const releaseInfo = await this.checkArtistForNewReleases(artist);
+                const releaseInfo = await this.checkArtistForTodayReleases(artist);
                 if (releaseInfo) {
-                    newReleases.push(releaseInfo);
+                    todayReleases.push(releaseInfo);
                 }
                 // Small delay between API calls
                 await new Promise(resolve => setTimeout(resolve, 1000));
             }
 
-            // Send results to Discord
-            await this.sendDailyReport(newReleases, artists.length);
+            // Send results to Discord - send each release individually
+            await this.sendDailyReport(todayReleases, artists.length);
             
-            console.log(`✅ Daily release check completed. Found ${newReleases.length} new releases.`);
+            console.log(`✅ Daily release check completed. Found ${todayReleases.length} releases from today.`);
             
         } catch (error) {
             console.error('❌ Error in daily release check:', error.message);
@@ -64,7 +64,7 @@ class ScheduledReleaseService {
         }
     }
 
-    async checkArtistForNewReleases(artist) {
+    async checkArtistForTodayReleases(artist) {
         try {
             console.log(`🔍 Checking ${artist.name}...`);
             
@@ -75,11 +75,17 @@ class ScheduledReleaseService {
                 return null;
             }
 
-            // Check if this is a new release (different from last known)
-            const isNewRelease = artist.lastReleaseId !== latestRelease.id;
+            // Check if the release is from TODAY
+            const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD format
+            const releaseDate = latestRelease.release_date;
             
-            if (isNewRelease) {
-                console.log(`   🆕 NEW RELEASE: ${latestRelease.name} by ${artist.name}`);
+            // Handle different date formats from Spotify (YYYY-MM-DD, YYYY-MM, YYYY)
+            const isToday = releaseDate === today || 
+                           (releaseDate.length === 7 && releaseDate === today.substring(0, 7)) || // YYYY-MM
+                           (releaseDate.length === 4 && releaseDate === today.substring(0, 4));   // YYYY
+            
+            if (isToday) {
+                console.log(`   🆕 TODAY'S RELEASE: ${latestRelease.name} by ${artist.name} (${releaseDate})`);
                 
                 // Update the database with the new release
                 await this.databaseService.updateArtistLastRelease(artist.id, latestRelease.id);
@@ -98,7 +104,7 @@ class ScheduledReleaseService {
                             `🔗 **Listen**: ${latestRelease.external_urls.spotify}`
                 };
             } else {
-                console.log(`   ℹ️ No new releases for ${artist.name}`);
+                console.log(`   ℹ️ No releases today for ${artist.name} (latest: ${releaseDate})`);
                 return null;
             }
             
@@ -108,7 +114,7 @@ class ScheduledReleaseService {
         }
     }
 
-    async sendDailyReport(newReleases, totalArtists) {
+    async sendDailyReport(todayReleases, totalArtists) {
         const currentDate = new Date().toLocaleDateString('en-US', {
             weekday: 'long',
             year: 'numeric',
@@ -116,8 +122,8 @@ class ScheduledReleaseService {
             day: 'numeric'
         });
 
-        if (newReleases.length === 0) {
-            // Send "no new releases" message
+        if (todayReleases.length === 0) {
+            // Send "no new releases today" message
             const message = `🌅 **Daily Release Report** - ${currentDate}\n\n` +
                           `📊 Checked **${totalArtists}** subscribed artists\n` +
                           `📭 No new releases today\n\n` +
@@ -128,15 +134,16 @@ class ScheduledReleaseService {
             // Send header message
             const headerMessage = `🌅 **Daily Release Report** - ${currentDate}\n\n` +
                                  `📊 Checked **${totalArtists}** artists\n` +
-                                 `🆕 Found **${newReleases.length}** new release(s)!\n`;
+                                 `🆕 Found **${todayReleases.length}** release(s) from TODAY!\n`;
             
             await this.discordService.sendMessage(headerMessage);
             
-            // Send each new release
-            for (const release of newReleases) {
+            // Send EACH new release individually
+            for (const release of todayReleases) {
                 await this.discordService.sendMessage(release.message);
+                console.log(`📤 Sent individual release: ${release.release.name} by ${release.artist}`);
                 // Small delay between messages
-                await new Promise(resolve => setTimeout(resolve, 1500));
+                await new Promise(resolve => setTimeout(resolve, 2000));
             }
             
             // Send footer

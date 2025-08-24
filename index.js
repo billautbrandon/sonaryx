@@ -45,9 +45,11 @@ async function initializeBot() {
     
     console.log('✅ All services initialized successfully!');
     console.log('🎵 Bot is ready to accept commands!');
-    console.log('📅 Daily release checks scheduled for 00:00 UTC');
+    console.log('📅 Daily release checks scheduled for 09:00 UTC');
+    console.log('🎯 Only shows releases from TODAY!');
     console.log('📝 Available commands:');
-    console.log('   /subscribe [artist_name] - Subscribe to an artist');
+    console.log('   /subscribe [artist_name] - Subscribe to an artist by name');
+    console.log('   /subscribe-id [artist_id] - Subscribe to an artist by Spotify ID');
     console.log('   /unsubscribe [artist_id] - Unsubscribe from an artist');
     console.log('   /list - List all subscribed artists');
 }
