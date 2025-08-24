@@ -1,0 +1,20 @@
+version: '3.8'
+
+services:
+  sonaryx-server:
+    build: .
+    container_name: sonaryx-server
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=production
+    env_file:
+      - .env
+    volumes:
+      - ./logs:/app/logs
+      - ./prisma:/app/prisma
+    networks:
+      - sonaryx-network
+
+networks:
+  sonaryx-network:
+    driver: bridge
