@@ -1,60 +1,109 @@
-const { Client, GatewayIntentBits } = require('discord.js');
 const cron = require('node-cron');
 require('dotenv').config();
 
-// Create a new Discord client
-const client = new Client({
-    intents: [
-        GatewayIntentBits.Guilds
-    ]
-});
+const DiscordService = require('./services/discordService');
+const SpotifyService = require('./services/spotifyService');
 
-// When the client is ready, run this code
-client.once('clientReady', () => {
-    console.log(`✅ Bot is ready! Logged in as ${client.user.tag}`);
-    console.log(`🎯 Target channel ID: ${process.env.DISCORD_CHANNEL_ID}`);
-    
-    // Start the cron job to send "Hello" every second
-    startHelloCron();
-});
+// Initialize services
+const discordService = new DiscordService();
+const spotifyService = new SpotifyService();
 
-function startHelloCron() {
-    // Schedule a task to run every second
-    cron.schedule('* * * * * *', async () => {
-        try {
-            const channel = client.channels.cache.get(process.env.DISCORD_CHANNEL_ID);
-            
-            if (!channel) {
-                console.error('❌ Channel not found! Please check your DISCORD_CHANNEL_ID');
-                return;
-            }
-            
-            await channel.send('Hello');
-            console.log(`📨 Message sent to #${channel.name} at ${new Date().toISOString()}`);
-            
-        } catch (error) {
-            console.error('❌ Error sending message:', error.message);
-        }
-    });
+// Configuration
+const ARTIST_NAME = 'NMIXX';
+const CRON_SCHEDULE = '*/10 * * * * *'; // Every 10 seconds
+
+async function initializeBot() {
+    console.log('🚀 Starting Sonaryx Bot...');
     
-    console.log('⏰ Cron job started - sending "Hello" every second');
+    // Initialize Discord
+    const discordReady = await discordService.login();
+    if (!discordReady) {
+        console.error('❌ Failed to initialize Discord service');
+        process.exit(1);
+    }
+
+    // Initialize Spotify
+    const spotifyReady = await spotifyService.authenticate();
+    if (!spotifyReady) {
+        console.error('❌ Failed to initialize Spotify service');
+        process.exit(1);
+    }
+
+    // Wait a moment for Discord client to be fully ready
+    setTimeout(() => {
+        startReleaseMonitoring();
+    }, 2000);
 }
 
-// Handle process termination gracefully
+function startReleaseMonitoring() {
+    console.log(`🎵 Starting release monitoring for artist: ${ARTIST_NAME}`);
+    console.log(`⏰ Checking every 10 seconds...`);
+
+    // Schedule the release check
+    cron.schedule(CRON_SCHEDULE, async () => {
+        await checkAndSendLatestRelease();
+    });
+
+    // Send initial release immediately
+    setTimeout(async () => {
+        await sendCurrentLatestRelease();
+    }, 1000);
+}
+
+async function checkAndSendLatestRelease() {
+    try {
+        console.log(`🔍 Checking for new releases from ${ARTIST_NAME}...`);
+        
+        const newRelease = await spotifyService.checkForNewRelease(ARTIST_NAME);
+        
+        if (newRelease) {
+            console.log(`🆕 New release found: ${newRelease.name}`);
+            const success = await discordService.sendSpotifyRelease(newRelease);
+            
+            if (success) {
+                console.log('✅ Successfully sent new release notification');
+            }
+        } else {
+            console.log(`ℹ️  No new releases found for ${ARTIST_NAME}`);
+        }
+    } catch (error) {
+        console.error('❌ Error in release monitoring:', error.message);
+    }
+}
+
+async function sendCurrentLatestRelease() {
+    try {
+        console.log(`🎵 Fetching current latest release for ${ARTIST_NAME}...`);
+        
+        const latestRelease = await spotifyService.getArtistLatestRelease(ARTIST_NAME);
+        
+        if (latestRelease) {
+            const success = await discordService.sendSpotifyRelease(latestRelease);
+            
+            if (success) {
+                console.log('✅ Successfully sent current latest release');
+            }
+        } else {
+            await discordService.sendMessage(`❌ Could not fetch latest release for ${ARTIST_NAME}`);
+        }
+    } catch (error) {
+        console.error('❌ Error sending current latest release:', error.message);
+    }
+}
+
+// Handle graceful shutdown
 process.on('SIGINT', () => {
-    console.log('\n🛑 Shutting down bot...');
-    client.destroy();
+    console.log('\n🛑 Shutting down Sonaryx Bot...');
     process.exit(0);
 });
 
 process.on('SIGTERM', () => {
-    console.log('\n🛑 Shutting down bot...');
-    client.destroy();
+    console.log('\n🛑 Shutting down Sonaryx Bot...');
     process.exit(0);
 });
 
-// Login to Discord with your bot token
-client.login(process.env.DISCORD_TOKEN).catch(error => {
-    console.error('❌ Failed to login to Discord:', error.message);
+// Start the bot
+initializeBot().catch(error => {
+    console.error('❌ Failed to start bot:', error.message);
     process.exit(1);
 });
