@@ -6,19 +6,57 @@ class ScheduledReleaseService {
         this.spotifyService = spotifyService;
         this.discordService = discordService;
         this.cronJob = null;
+        this.isRunning = false;
     }
 
     start() {
-        // Schedule daily check at 09:00 (9 AM)
-        this.cronJob = cron.schedule('0 9 * * *', async () => {
-            console.log('🌅 Daily release check started at', new Date().toISOString());
-            await this.performDailyReleaseCheck();
-        }, {
-            scheduled: true,
-            timezone: "UTC"
-        });
+        const schedule = process.env.CRON_SCHEDULE || '0 9 * * *';
+        const timezone = process.env.CRON_TZ || 'UTC';
 
-        console.log('✅ Daily release checker scheduled for 09:00 UTC');
+        if (!cron.validate(schedule)) {
+            console.error(`❌ Invalid CRON_SCHEDULE "${schedule}". Scheduler not started.`);
+            return;
+        }
+
+        console.log(
+            `✅ Scheduling daily checker: CRON="${schedule}" TZ="${timezone}" (now=${new Date().toISOString()})`
+        );
+
+        this.cronJob = cron.schedule(
+            schedule,
+            async () => {
+                if (this.isRunning) {
+                    console.warn('⏳ Skipping run: previous job still running.');
+                    return;
+                }
+                this.isRunning = true;
+                const startedAt = new Date().toISOString();
+                console.log(`⏰ Cron fired at ${startedAt} (CRON="${schedule}" TZ="${timezone}")`);
+                try {
+                    await this.performDailyReleaseCheck();
+                } catch (error) {
+                    console.error('❌ Cron execution error:', error?.message || error);
+                } finally {
+                    this.isRunning = false;
+                    console.log(`✅ Cron job finished at ${new Date().toISOString()}`);
+                }
+            },
+            {
+                scheduled: true,
+                timezone
+            }
+        );
+
+        if (process.env.RUN_ON_START === 'true') {
+            setTimeout(async () => {
+                console.log('🚀 RUN_ON_START=true → triggering an immediate daily check...');
+                try {
+                    await this.performDailyReleaseCheck();
+                } catch (error) {
+                    console.error('❌ Immediate run failed:', error?.message || error);
+                }
+            }, 5000);
+        }
     }
 
     stop() {
@@ -32,9 +70,8 @@ class ScheduledReleaseService {
     async performDailyReleaseCheck() {
         try {
             console.log('🎵 Performing daily release check...');
-            
             const artists = await this.databaseService.getSubscribedArtists();
-            
+
             if (artists.length === 0) {
                 console.log('📭 No artists subscribed for daily check');
                 return;
@@ -43,21 +80,16 @@ class ScheduledReleaseService {
             console.log(`🔍 Checking ${artists.length} subscribed artists for TODAY's releases...`);
 
             const todayReleases = [];
-            
             for (const artist of artists) {
                 const releaseInfo = await this.checkArtistForTodayReleases(artist);
                 if (releaseInfo) {
                     todayReleases.push(releaseInfo);
                 }
-                // Small delay between API calls
-                await new Promise(resolve => setTimeout(resolve, 1000));
+                await new Promise((resolve) => setTimeout(resolve, 1000));
             }
 
-            // Send results to Discord - send each release individually
             await this.sendDailyReport(todayReleases, artists.length);
-            
             console.log(`✅ Daily release check completed. Found ${todayReleases.length} releases from today.`);
-            
         } catch (error) {
             console.error('❌ Error in daily release check:', error.message);
             await this.discordService.sendMessage(`❌ Daily release check failed: ${error.message}`);
