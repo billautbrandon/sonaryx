@@ -70,6 +70,11 @@ class ScheduledReleaseService {
     async performDailyReleaseCheck() {
         try {
             console.log('🎵 Performing daily release check...');
+            const tz = process.env.CRON_TZ || 'UTC';
+            const windowDays = Math.max(parseInt(process.env.RELEASE_WINDOW_DAYS || '0', 10) || 0, 0);
+            const todayYMD = this.getTodayYMD(tz);
+            const cutoffYMD = this.getCutoffYMD(todayYMD, windowDays, tz);
+            console.log(`🕒 Date window: cutoff=${cutoffYMD} (windowDays=${windowDays}, tz=${tz})`);
             const artists = await this.databaseService.getSubscribedArtists();
 
             if (artists.length === 0) {
@@ -77,11 +82,11 @@ class ScheduledReleaseService {
                 return;
             }
 
-            console.log(`🔍 Checking ${artists.length} subscribed artists for TODAY's releases...`);
+            console.log(`🔍 Checking ${artists.length} subscribed artists for releases on/after ${cutoffYMD}...`);
 
             const todayReleases = [];
             for (const artist of artists) {
-                const releaseInfo = await this.checkArtistForTodayReleases(artist);
+                const releaseInfo = await this.checkArtistForTodayReleases(artist, cutoffYMD);
                 if (releaseInfo) {
                     todayReleases.push(releaseInfo);
                 }
@@ -96,7 +101,7 @@ class ScheduledReleaseService {
         }
     }
 
-    async checkArtistForTodayReleases(artist) {
+    async checkArtistForTodayReleases(artist, cutoffYMD) {
         try {
             console.log(`🔍 Checking ${artist.name}...`);
             
@@ -107,15 +112,13 @@ class ScheduledReleaseService {
                 return null;
             }
 
-            // Check if the release is from TODAY (not before today)
-            const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD format
             const releaseDate = latestRelease.release_date;
             
-            // Convert release date to comparable format and check if it's today or newer
-            const isTodayOrNewer = this.isReleaseDateTodayOrNewer(releaseDate, today);
+            // Convert release date to comparable format and check if it's on/after cutoff
+            const isOnOrAfterCutoff = this.isReleaseDateTodayOrNewer(releaseDate, cutoffYMD);
             
-            if (isTodayOrNewer) {
-                console.log(`   🆕 TODAY'S RELEASE: ${latestRelease.name} by ${artist.name} (${releaseDate})`);
+            if (isOnOrAfterCutoff) {
+                console.log(`   🆕 Release passes cutoff (${cutoffYMD}): ${latestRelease.name} by ${artist.name} (${releaseDate})`);
                 
                 // Update the database with the new release
                 await this.databaseService.updateArtistLastRelease(artist.id, latestRelease.id);
@@ -134,7 +137,7 @@ class ScheduledReleaseService {
                             `🔗 **Listen**: ${latestRelease.external_urls.spotify}`
                 };
             } else {
-                console.log(`   ℹ️ No releases today for ${artist.name} (latest: ${releaseDate})`);
+                console.log(`   ℹ️ No releases on/after ${cutoffYMD} for ${artist.name} (latest: ${releaseDate})`);
                 return null;
             }
             
@@ -142,6 +145,28 @@ class ScheduledReleaseService {
             console.log(`   ❌ Error checking ${artist.name}: ${error.message}`);
             return null;
         }
+    }
+
+    getTodayYMD(timezone) {
+        const fmt = new Intl.DateTimeFormat('en-CA', { timeZone: timezone, year: 'numeric', month: '2-digit', day: '2-digit' });
+        const parts = fmt.formatToParts(new Date());
+        const y = parts.find(p => p.type === 'year').value;
+        const m = parts.find(p => p.type === 'month').value;
+        const d = parts.find(p => p.type === 'day').value;
+        return `${y}-${m}-${d}`; // YYYY-MM-DD
+    }
+
+    getCutoffYMD(todayYMD, windowDays, timezone) {
+        if (windowDays === 0) return todayYMD;
+        const [y, m, d] = todayYMD.split('-').map(Number);
+        const dt = new Date(Date.UTC(y, m - 1, d));
+        dt.setUTCDate(dt.getUTCDate() - windowDays);
+        const fmt = new Intl.DateTimeFormat('en-CA', { timeZone: timezone, year: 'numeric', month: '2-digit', day: '2-digit' });
+        const parts = fmt.formatToParts(dt);
+        const yy = parts.find(p => p.type === 'year').value;
+        const mm = parts.find(p => p.type === 'month').value;
+        const dd = parts.find(p => p.type === 'day').value;
+        return `${yy}-${mm}-${dd}`;
     }
 
     isReleaseDateTodayOrNewer(releaseDate, today) {
@@ -185,7 +210,7 @@ class ScheduledReleaseService {
             day: 'numeric'
         });
 
-        // Only send messages if there are releases (avoid spam)
+        // Match check-releases behavior
         if (todayReleases.length > 0) {
             // Send header message
             const headerMessage = `🌅 **Daily Release Report** - ${currentDate}\n\n` +
@@ -206,7 +231,10 @@ class ScheduledReleaseService {
             const footerMessage = `✅ Daily release check completed!`;
             await this.discordService.sendMessage(footerMessage);
         } else {
-            console.log(`📭 No releases from today - not sending any Discord messages (avoiding spam)`);
+            // Follow user's latest request: send same messages as make check-releases when none
+            await this.discordService.sendMessage('✅ Release check completed!');
+            await this.discordService.sendMessage('ℹ️ No new releases found for any subscribed artists.');
+            console.log(`📭 No releases from today - sent no-release notification to Discord`);
         }
     }
 
