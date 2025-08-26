@@ -76,12 +76,8 @@ class ReleaseChecker {
                 return;
             }
 
-            const headerMessage = `🎵 Checking releases for ${artists.length} subscribed artist(s)...`;
+            const headerMessage = `Checking releases for ${artists.length} subscribed artist(s)...`;
             console.log(headerMessage + '\n');
-            
-            if (this.sendToDiscord) {
-                await this.sendDiscordMessage(headerMessage);
-            }
 
             let hasNewReleases = false;
             const releaseMessages = [];
@@ -95,24 +91,25 @@ class ReleaseChecker {
                 console.log(''); // Empty line for readability
             }
 
-            const completionMessage = '✅ Release check completed!';
+            const completionMessage = 'Release check completed.';
             console.log(completionMessage);
             
             if (this.sendToDiscord) {
-                // Send release messages to Discord
-                for (const message of releaseMessages) {
-                    await this.sendDiscordMessage(message);
-                    await new Promise(resolve => setTimeout(resolve, 1000)); // Small delay between messages
-                }
-                
-                // Send completion message only if there were releases
                 if (hasNewReleases) {
-                    await this.sendDiscordMessage(completionMessage);
+                    const links = releaseMessages
+                        .map(msg => msg)
+                        .filter(Boolean);
+                    const combined = [
+                        `Release Report`,
+                        '',
+                        links.map(l => `---\n${l}`).join('\n'),
+                        '---',
+                        completionMessage
+                    ].join('\n');
+                    await this.sendDiscordMessage(combined);
                 } else {
-                    await this.sendDiscordMessage('✅ Release check completed!');
-                    await this.sendDiscordMessage('ℹ️ No new releases found for any subscribed artists.');
-
-                    console.log('📭 No new releases found - not sending completion message to avoid spam');
+                    await this.sendDiscordMessage('Release check completed.\n\nNo new releases found for any subscribed artists.');
+                    console.log('📭 No new releases found - sent minimal message');
                 }
             }
         } catch (error) {

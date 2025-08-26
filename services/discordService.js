@@ -1,4 +1,4 @@
-const { Client, GatewayIntentBits, SlashCommandBuilder, REST, Routes } = require('discord.js');
+const { Client, GatewayIntentBits, SlashCommandBuilder, REST, Routes, EmbedBuilder } = require('discord.js');
 
 class DiscordService {
     constructor(databaseService, spotifyService) {
@@ -157,10 +157,12 @@ class DiscordService {
             console.log(`✅ Subscribed to: ${artist.name}`);
             
             await interaction.editReply(
-                `✅ Successfully subscribed to **${artist.name}**!\n` +
-                `🆔 Artist ID: \`${artist.id}\`\n` +
-                `👥 Followers: ${artist.followers?.total?.toLocaleString() || 'Unknown'}\n` +
-                `🎵 Use \`/list\` to see all subscriptions!`
+                `Subscribed to ${artist.name}\n` +
+                `\n` +
+                `ID: \`${artist.id}\`\n` +
+                `Followers: ${artist.followers?.total?.toLocaleString() || 'Unknown'}\n` +
+                `\n` +
+                `Use /list to see all subscriptions.`
             );
         } catch (error) {
             console.error('❌ Error in subscribe command:', error);
@@ -195,10 +197,12 @@ class DiscordService {
             console.log(`✅ Subscribed to: ${artist.name} via ID`);
             
             await interaction.editReply(
-                `✅ Successfully subscribed to **${artist.name}** via Spotify ID!\n` +
-                `🆔 Artist ID: \`${artist.id}\`\n` +
-                `👥 Followers: ${artist.followers?.total?.toLocaleString() || 'Unknown'}\n` +
-                `🎵 Use \`/list\` to see all subscriptions!`
+                `Subscribed to ${artist.name}\n` +
+                `\n` +
+                `ID: \`${artist.id}\`\n` +
+                `Followers: ${artist.followers?.total?.toLocaleString() || 'Unknown'}\n` +
+                `\n` +
+                `Use /list to see all subscriptions.`
             );
         } catch (error) {
             console.error('❌ Error in subscribe-id command:', error);
@@ -219,7 +223,7 @@ class DiscordService {
             }
 
             console.log(`✅ Unsubscribed from: ${artist.name}`);
-            await interaction.editReply(`✅ Successfully unsubscribed from **${artist.name}** (\`${artistId}\`)`);
+            await interaction.editReply(`Unsubscribed from ${artist.name} (\`${artistId}\`)`);
         } catch (error) {
             console.error('❌ Error in unsubscribe command:', error);
             await interaction.editReply(`❌ Error unsubscribing from artist: ${error.message}`);
@@ -232,7 +236,7 @@ class DiscordService {
             const artists = await this.databaseService.getSubscribedArtists();
             
             if (artists.length === 0) {
-                await interaction.editReply('📭 No artists subscribed yet.\n💡 Use `/subscribe [artist_name]` to add artists!');
+                await interaction.editReply('No artists subscribed yet.\n\nUse `/subscribe [artist_name]` to add artists.');
                 return;
             }
 
@@ -242,9 +246,9 @@ class DiscordService {
 
             console.log(`✅ Found ${artists.length} subscribed artists`);
             await interaction.editReply(
-                `🎵 **Subscribed Artists** (${artists.length}):\n\n${artistList}\n\n` +
-                `💡 Use \`/unsubscribe [artist_id]\` to remove an artist.\n` +
-                `🔍 Use \`make check-releases\` in terminal to check for new releases.`
+                `Subscribed Artists (${artists.length})\n\n${artistList}\n\n` +
+                `Use /unsubscribe [artist_id] to remove an artist.\n` +
+                `Use \`make check-releases\` in terminal to check for new releases.`
             );
         } catch (error) {
             console.error('❌ Error in list command:', error);
@@ -262,15 +266,21 @@ class DiscordService {
         }
     }
 
-    async sendMessage(message) {
+    async sendMessage(message, options = {}) {
         try {
             const channel = this.client.channels.cache.get(process.env.DISCORD_CHANNEL_ID);
             
             if (!channel) {
                 throw new Error('Channel not found! Please check your DISCORD_CHANNEL_ID');
             }
-            
-            await channel.send(message);
+
+            // Support allowedMentions for explicit user pings
+            const { allowedMentions } = options;
+            if (allowedMentions) {
+                await channel.send({ content: message, allowedMentions: { parse: [], ...allowedMentions } });
+            } else {
+                await channel.send(message);
+            }
             console.log(`📨 Message sent to #${channel.name} at ${new Date().toISOString()}`);
             return true;
         } catch (error) {
@@ -280,15 +290,37 @@ class DiscordService {
     }
 
     async sendSpotifyRelease(releaseData) {
-        const { name, artists, external_urls, release_date, album_type, total_tracks } = releaseData;
-        
-        const artistNames = artists.map(artist => artist.name).join(', ');
-        const message = `🎵 **Latest ${album_type}**: **${name}** by **${artistNames}**\n` +
-                       `📅 Released: ${release_date}\n` +
-                       `🎧 Tracks: ${total_tracks}\n` +
-                       `🔗 Listen: ${external_urls.spotify}`;
-        
-        return await this.sendMessage(message);
+        try {
+            const embed = this.buildReleaseEmbed(releaseData);
+            const channel = this.client.channels.cache.get(process.env.DISCORD_CHANNEL_ID);
+            if (!channel) {
+                throw new Error('Channel not found! Please check your DISCORD_CHANNEL_ID');
+            }
+            await channel.send({ embeds: [embed] });
+            return true;
+        } catch (error) {
+            console.error('❌ Error sending release embed:', error.message);
+            return false;
+        }
+    }
+
+    buildReleaseEmbed(releaseData) {
+        const { name, artists, external_urls, release_date, album_type, total_tracks, images } = releaseData;
+        const artistNames = (artists || []).map(a => a.name).join(', ');
+        const cover = Array.isArray(images) && images.length > 0 ? images[0].url : null;
+        const typeLabel = (album_type || '').charAt(0).toUpperCase() + (album_type || '').slice(1);
+
+        const embed = new EmbedBuilder()
+            .setTitle(name)
+            .setURL(external_urls?.spotify || null)
+            .setDescription(`${typeLabel}${typeLabel ? ' • ' : ''}${artistNames}`)
+            .addFields(
+                { name: 'Release date', value: release_date || 'Unknown', inline: true },
+                { name: 'Tracks', value: String(total_tracks || 'Unknown'), inline: true }
+            );
+
+        if (cover) embed.setThumbnail(cover);
+        return embed;
     }
 
     getClient() {

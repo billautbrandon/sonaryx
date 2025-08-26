@@ -123,18 +123,11 @@ class ScheduledReleaseService {
                 // Update the database with the new release
                 await this.databaseService.updateArtistLastRelease(artist.id, latestRelease.id);
                 
-                // Format release info for Discord
-                const artistNames = latestRelease.artists.map(a => a.name).join(', ');
-                const releaseType = latestRelease.album_type.charAt(0).toUpperCase() + latestRelease.album_type.slice(1);
-                
+                // Return only the Spotify link for concise messaging
                 return {
                     artist: artist.name,
                     release: latestRelease,
-                    message: `🆕 **${releaseType}**: **${latestRelease.name}**\n` +
-                            `👨‍🎤 **Artist(s)**: ${artistNames}\n` +
-                            `📅 **Released**: ${latestRelease.release_date}\n` +
-                            `🎧 **Tracks**: ${latestRelease.total_tracks}\n` +
-                            `🔗 **Listen**: ${latestRelease.external_urls.spotify}`
+                    link: latestRelease.external_urls.spotify
                 };
             } else {
                 console.log(`   ℹ️ No releases on/after ${cutoffYMD} for ${artist.name} (latest: ${releaseDate})`);
@@ -210,30 +203,38 @@ class ScheduledReleaseService {
             day: 'numeric'
         });
 
-        // Match check-releases behavior
+        // Single-message output using requested template
         if (todayReleases.length > 0) {
-            // Send header message
-            const headerMessage = `🌅 **Daily Release Report** - ${currentDate}\n\n` +
-                                 `📊 Checked **${totalArtists}** artists\n` +
-                                 `🆕 Found **${todayReleases.length}** release(s) from TODAY!\n`;
-            
-            await this.discordService.sendMessage(headerMessage);
-            
-            // Send EACH new release individually
-            for (const release of todayReleases) {
-                await this.discordService.sendMessage(release.message);
-                console.log(`📤 Sent individual release: ${release.release.name} by ${release.artist}`);
-                // Small delay between messages
-                await new Promise(resolve => setTimeout(resolve, 2000));
-            }
-            
-            // Send footer
-            const footerMessage = `✅ Daily release check completed!`;
-            await this.discordService.sendMessage(footerMessage);
+            const links = todayReleases.map(r => r.link).filter(Boolean);
+            const interestedMembers = (process.env.INTERESTED_MEMBERS || '').trim();
+            const interestedMemberIdsRaw = (process.env.INTERESTED_MEMBER_IDS || '').trim();
+            const interestedIds = interestedMemberIdsRaw
+                ? interestedMemberIdsRaw
+                    .split(/[ ,\n\t]+/)
+                    .map(t => t && t.replace(/[^0-9]/g, ''))
+                    .filter(t => t && t.length >= 5)
+                : [];
+            const mentionText = interestedIds.length > 0
+                ? interestedIds.map(id => `<@${id}>`).join(' ')
+                : interestedMembers;
+
+            const header = `:calendar: Daily Release Report — **${currentDate}**`;
+            const metaLines = [
+                `> New releases today:   **${todayReleases.length}**`,
+                mentionText ? `> Interested members: ${mentionText}` : null
+            ].filter(Boolean);
+
+            const body = links.map(l => `* ${l}`).join('\n');
+
+            const combined = [header, '', ...metaLines, '', body].join('\n');
+
+            await this.discordService.sendMessage(combined, {
+                allowedMentions: interestedIds.length > 0 ? { users: interestedIds } : undefined
+            });
         } else {
-            // Follow user's latest request: send same messages as make check-releases when none
-            await this.discordService.sendMessage('✅ Release check completed!');
-            await this.discordService.sendMessage('ℹ️ No new releases found for any subscribed artists.');
+            // Minimal single message on no releases
+            const msg = `Release check completed.\n\nNo new releases found for any subscribed artists.`;
+            await this.discordService.sendMessage(msg);
             console.log(`📭 No releases from today - sent no-release notification to Discord`);
         }
     }
