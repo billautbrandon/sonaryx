@@ -9,8 +9,9 @@
 - 🎵 **Artist Subscriptions**: Subscribe to any Spotify artist via Discord commands
 - 🤖 **Discord Slash Commands**: Easy-to-use `/subscribe`, `/subscribe-id`, `/unsubscribe`, and `/list` commands  
 - 📅 **Daily Automatic Checks**: Automatically checks for new releases every day at 09:00 UTC
+- 🔄 **Fallback Detection**: Evening fallback check to catch missed releases from previous day
 - 🔍 **Manual Release Checking**: Check all subscribed artists' latest releases on demand
-- 📊 **SQLite Database**: Persistent artist subscriptions with Prisma ORM
+- 📊 **SQLite Database**: Persistent artist subscriptions and daily release snapshots
 - 🐳 **Docker Support**: Full containerized setup
 - 🎯 **Smart Detection**: Only shows releases from TODAY's date
 - 📨 **Individual Notifications**: Sends separate message for each new release
@@ -173,11 +174,22 @@ make db-reset       # Reset database (⚠️ deletes all data)
 
 ## 📅 Daily Schedule
 
-- **Automatic Check**: Every day at **09:00 UTC** (9:00 AM)
+### Morning Check (09:00 UTC)
+- **When**: Every day at **09:00 UTC** (9:00 AM)
 - **What it does**: Checks all subscribed artists for releases from TODAY only
+- **Storage**: Stores found releases in database for later comparison
 - **Discord Output**: Sends individual message for EACH new release found today
 - **Smart Filtering**: Only shows releases with today's date (ignores older releases)
-- **No Spam**: Only sends messages for actual releases from today
+
+### Fallback Check (20:00 UTC)
+- **When**: Every day at **20:00 UTC** (8:00 PM) - configurable via `FALLBACK_CRON_SCHEDULE`
+- **What it does**: 
+  - Checks all releases from the previous day
+  - Compares with what was stored in the morning check
+  - Finds any missed releases that weren't caught earlier
+  - Updates database with current day's releases (replacing previous day)
+- **Discord Output**: Reports missed releases from previous day + any new releases today
+- **Purpose**: Catches releases that were published after the morning check
 
 ---
 

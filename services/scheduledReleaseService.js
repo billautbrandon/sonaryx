@@ -6,15 +6,22 @@ class ScheduledReleaseService {
         this.spotifyService = spotifyService;
         this.discordService = discordService;
         this.cronJob = null;
+        this.fallbackCronJob = null;
         this.isRunning = false;
+        this.isFallbackRunning = false;
     }
 
     start() {
+        this.startDailyCheck();
+        this.startFallbackCheck();
+    }
+
+    startDailyCheck() {
         const schedule = process.env.CRON_SCHEDULE || '0 9 * * *';
         const timezone = process.env.CRON_TZ || 'UTC';
 
         if (!cron.validate(schedule)) {
-            console.error(`❌ Invalid CRON_SCHEDULE "${schedule}". Scheduler not started.`);
+            console.error(`❌ Invalid CRON_SCHEDULE "${schedule}". Daily scheduler not started.`);
             return;
         }
 
@@ -26,19 +33,19 @@ class ScheduledReleaseService {
             schedule,
             async () => {
                 if (this.isRunning) {
-                    console.warn('⏳ Skipping run: previous job still running.');
+                    console.warn('⏳ Skipping daily run: previous job still running.');
                     return;
                 }
                 this.isRunning = true;
                 const startedAt = new Date().toISOString();
-                console.log(`⏰ Cron fired at ${startedAt} (CRON="${schedule}" TZ="${timezone}")`);
+                console.log(`⏰ Daily cron fired at ${startedAt} (CRON="${schedule}" TZ="${timezone}")`);
                 try {
                     await this.performDailyReleaseCheck();
                 } catch (error) {
-                    console.error('❌ Cron execution error:', error?.message || error);
+                    console.error('❌ Daily cron execution error:', error?.message || error);
                 } finally {
                     this.isRunning = false;
-                    console.log(`✅ Cron job finished at ${new Date().toISOString()}`);
+                    console.log(`✅ Daily cron job finished at ${new Date().toISOString()}`);
                 }
             },
             {
@@ -59,12 +66,55 @@ class ScheduledReleaseService {
         }
     }
 
+    startFallbackCheck() {
+        const fallbackSchedule = process.env.FALLBACK_CRON_SCHEDULE || '0 20 * * *'; // Default to 8 PM
+        const timezone = process.env.CRON_TZ || 'UTC';
+
+        if (!cron.validate(fallbackSchedule)) {
+            console.error(`❌ Invalid FALLBACK_CRON_SCHEDULE "${fallbackSchedule}". Fallback scheduler not started.`);
+            return;
+        }
+
+        console.log(
+            `✅ Scheduling fallback checker: CRON="${fallbackSchedule}" TZ="${timezone}" (now=${new Date().toISOString()})`
+        );
+
+        this.fallbackCronJob = cron.schedule(
+            fallbackSchedule,
+            async () => {
+                if (this.isFallbackRunning) {
+                    console.warn('⏳ Skipping fallback run: previous fallback job still running.');
+                    return;
+                }
+                this.isFallbackRunning = true;
+                const startedAt = new Date().toISOString();
+                console.log(`⏰ Fallback cron fired at ${startedAt} (CRON="${fallbackSchedule}" TZ="${timezone}")`);
+                try {
+                    await this.performFallbackReleaseCheck();
+                } catch (error) {
+                    console.error('❌ Fallback cron execution error:', error?.message || error);
+                } finally {
+                    this.isFallbackRunning = false;
+                    console.log(`✅ Fallback cron job finished at ${new Date().toISOString()}`);
+                }
+            },
+            {
+                scheduled: true,
+                timezone
+            }
+        );
+    }
+
     stop() {
         if (this.cronJob) {
             this.cronJob.destroy();
             this.cronJob = null;
         }
-        console.log('🛑 Daily release checker stopped');
+        if (this.fallbackCronJob) {
+            this.fallbackCronJob.destroy();
+            this.fallbackCronJob = null;
+        }
+        console.log('🛑 Daily and fallback release checkers stopped');
     }
 
     async performDailyReleaseCheck() {
@@ -93,11 +143,121 @@ class ScheduledReleaseService {
                 await new Promise((resolve) => setTimeout(resolve, 1000));
             }
 
+            // Store today's releases in the database
+            const releaseData = todayReleases.map(release => ({
+                spotifyLink: release.link,
+                artistName: release.artist,
+                releaseName: release.release.name,
+                releaseId: release.release.id,
+                releaseType: release.release.album_type,
+                releaseDate: release.release.release_date
+            }));
+            
+            await this.databaseService.storeDailyReleases(todayYMD, releaseData);
+
             await this.sendDailyReport(todayReleases, artists.length);
             console.log(`✅ Daily release check completed. Found ${todayReleases.length} releases from today.`);
         } catch (error) {
             console.error('❌ Error in daily release check:', error.message);
             await this.discordService.sendMessage(`❌ Daily release check failed: ${error.message}`);
+        }
+    }
+
+    async performFallbackReleaseCheck() {
+        try {
+            console.log('🔄 Performing fallback release check...');
+            const tz = process.env.CRON_TZ || 'UTC';
+            const todayYMD = this.getTodayYMD(tz);
+            const yesterdayYMD = this.getPreviousDayYMD(todayYMD);
+            
+            console.log(`🕒 Checking previous day: ${yesterdayYMD}`);
+            
+            const artists = await this.databaseService.getSubscribedArtists();
+
+            if (artists.length === 0) {
+                console.log('📭 No artists subscribed for fallback check');
+                return;
+            }
+
+            console.log(`🔍 Checking ${artists.length} artists for missed releases from ${yesterdayYMD}...`);
+
+            // Get all releases from yesterday stored in the database
+            const storedReleaseIds = await this.databaseService.getStoredReleaseIds(yesterdayYMD);
+            console.log(`📦 Found ${storedReleaseIds.length} stored releases for ${yesterdayYMD}`);
+
+            const missedReleases = [];
+            
+            for (const artist of artists) {
+                const missedRelease = await this.checkArtistForMissedReleases(artist, yesterdayYMD, storedReleaseIds);
+                if (missedRelease) {
+                    missedReleases.push(missedRelease);
+                }
+                await new Promise((resolve) => setTimeout(resolve, 1000));
+            }
+
+            // Store today's releases (empty if no releases today) to replace yesterday's entry
+            const todayReleases = [];
+            for (const artist of artists) {
+                const todayRelease = await this.checkArtistForTodayReleases(artist, todayYMD);
+                if (todayRelease) {
+                    todayReleases.push(todayRelease);
+                }
+                await new Promise((resolve) => setTimeout(resolve, 1000));
+            }
+
+            // Update database with today's releases (replacing yesterday's data)
+            const todayReleaseData = todayReleases.map(release => ({
+                spotifyLink: release.link,
+                artistName: release.artist,
+                releaseName: release.release.name,
+                releaseId: release.release.id,
+                releaseType: release.release.album_type,
+                releaseDate: release.release.release_date
+            }));
+            
+            await this.databaseService.storeDailyReleases(todayYMD, todayReleaseData);
+
+            await this.sendFallbackReport(missedReleases, yesterdayYMD, todayReleases, todayYMD, artists.length);
+            console.log(`✅ Fallback check completed. Found ${missedReleases.length} missed releases from ${yesterdayYMD}.`);
+        } catch (error) {
+            console.error('❌ Error in fallback release check:', error.message);
+            await this.discordService.sendMessage(`❌ Fallback release check failed: ${error.message}`);
+        }
+    }
+
+    async checkArtistForMissedReleases(artist, targetDate, storedReleaseIds) {
+        try {
+            console.log(`🔍 Checking ${artist.name} for missed releases on ${targetDate}...`);
+            
+            // Get all releases from the artist for the target date
+            const allReleases = await this.spotifyService.getArtistReleasesForDate(artist.name, targetDate);
+            
+            if (!allReleases || allReleases.length === 0) {
+                console.log(`   ℹ️ No releases found for ${artist.name} on ${targetDate}`);
+                return null;
+            }
+
+            // Filter out releases that are already stored
+            const missedReleases = allReleases.filter(release => !storedReleaseIds.includes(release.id));
+
+            if (missedReleases.length === 0) {
+                console.log(`   ✅ No missed releases for ${artist.name} on ${targetDate}`);
+                return null;
+            }
+
+            console.log(`   🆕 Found ${missedReleases.length} missed releases for ${artist.name} on ${targetDate}`);
+            
+            // Return the first missed release (most relevant)
+            const missedRelease = missedReleases[0];
+            return {
+                artist: artist.name,
+                release: missedRelease,
+                link: missedRelease.external_urls.spotify
+            };
+            
+        } catch (error) {
+            console.log(`   ❌ Error checking ${artist.name} for missed releases: ${error.message}`);
+            return null;
         }
     }
 
@@ -155,6 +315,18 @@ class ScheduledReleaseService {
         const dt = new Date(Date.UTC(y, m - 1, d));
         dt.setUTCDate(dt.getUTCDate() - windowDays);
         const fmt = new Intl.DateTimeFormat('en-CA', { timeZone: timezone, year: 'numeric', month: '2-digit', day: '2-digit' });
+        const parts = fmt.formatToParts(dt);
+        const yy = parts.find(p => p.type === 'year').value;
+        const mm = parts.find(p => p.type === 'month').value;
+        const dd = parts.find(p => p.type === 'day').value;
+        return `${yy}-${mm}-${dd}`;
+    }
+
+    getPreviousDayYMD(todayYMD) {
+        const [y, m, d] = todayYMD.split('-').map(Number);
+        const dt = new Date(Date.UTC(y, m - 1, d));
+        dt.setUTCDate(dt.getUTCDate() - 1); // Subtract 1 day
+        const fmt = new Intl.DateTimeFormat('en-CA', { year: 'numeric', month: '2-digit', day: '2-digit' });
         const parts = fmt.formatToParts(dt);
         const yy = parts.find(p => p.type === 'year').value;
         const mm = parts.find(p => p.type === 'month').value;
@@ -236,6 +408,68 @@ class ScheduledReleaseService {
             const msg = `Release check completed.\n\nNo new releases found for any subscribed artists.`;
             await this.discordService.sendMessage(msg);
             console.log(`📭 No releases from today - sent no-release notification to Discord`);
+        }
+    }
+
+    async sendFallbackReport(missedReleases, yesterdayYMD, todayReleases, todayYMD, totalArtists) {
+        const currentDate = new Date().toLocaleDateString('en-US', {
+            weekday: 'long',
+            year: 'numeric',
+            month: 'long',
+            day: 'numeric'
+        });
+
+        if (missedReleases.length > 0 || todayReleases.length > 0) {
+            const interestedMembers = (process.env.INTERESTED_MEMBERS || '').trim();
+            const interestedMemberIdsRaw = (process.env.INTERESTED_MEMBER_IDS || '').trim();
+            const interestedIds = interestedMemberIdsRaw
+                ? interestedMemberIdsRaw
+                    .split(/[ ,\n\t]+/)
+                    .map(t => t && t.replace(/[^0-9]/g, ''))
+                    .filter(t => t && t.length >= 5)
+                : [];
+            const mentionText = interestedIds.length > 0
+                ? interestedIds.map(id => `<@${id}>`).join(' ')
+                : interestedMembers;
+
+            const header = `:alarm_clock: Fallback Release Report — **${currentDate}**`;
+            const metaLines = [];
+            
+            if (missedReleases.length > 0) {
+                metaLines.push(`> Missed releases from ${yesterdayYMD}: **${missedReleases.length}**`);
+            }
+            if (todayReleases.length > 0) {
+                metaLines.push(`> New releases today (${todayYMD}): **${todayReleases.length}**`);
+            }
+            if (mentionText) {
+                metaLines.push(`> Interested members: ${mentionText}`);
+            }
+
+            const bodyParts = [];
+            
+            if (missedReleases.length > 0) {
+                bodyParts.push('**Missed Releases:**');
+                const missedLinks = missedReleases.map(r => `* ${r.link}`).join('\n');
+                bodyParts.push(missedLinks);
+            }
+            
+            if (todayReleases.length > 0) {
+                if (missedReleases.length > 0) bodyParts.push(''); // Add spacing
+                bodyParts.push('**Today\'s Releases:**');
+                const todayLinks = todayReleases.map(r => `* ${r.link}`).join('\n');
+                bodyParts.push(todayLinks);
+            }
+
+            const combined = [header, '', ...metaLines, '', ...bodyParts].join('\n');
+
+            await this.discordService.sendMessage(combined, {
+                allowedMentions: interestedIds.length > 0 ? { users: interestedIds } : undefined
+            });
+        } else {
+            // No missed releases and no new releases today
+            const msg = `Fallback check completed.\n\nNo missed releases from ${yesterdayYMD} and no new releases today.`;
+            await this.discordService.sendMessage(msg);
+            console.log(`📭 No missed or new releases - sent fallback notification to Discord`);
         }
     }
 

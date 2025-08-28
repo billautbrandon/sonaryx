@@ -24,3 +24,18 @@ model Artist {
 
   @@map("artists")
 }
+
+model DailyRelease {
+  id          Int      @id @default(autoincrement())
+  date        String   // YYYY-MM-DD format
+  spotifyLink String   // Spotify URL for the release
+  artistName  String   // Artist name
+  releaseName String   // Release name
+  releaseId   String   // Spotify release ID
+  releaseType String   // album, single, compilation
+  releaseDate String   // Original release date from Spotify
+  createdAt   DateTime @default(now())
+
+  @@unique([date, releaseId]) // Prevent duplicate releases for the same date
+  @@map("daily_releases")
+}

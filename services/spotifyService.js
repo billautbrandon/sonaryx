@@ -106,6 +106,64 @@ class SpotifyService {
         }
     }
 
+    async getArtistReleasesForDate(artistName, targetDate) {
+        try {
+            const artist = await this.searchArtist(artistName);
+            if (!artist) return [];
+
+            console.log(`🔍 Found artist: ${artist.name} (ID: ${artist.id})`);
+
+            // Get artist's albums, including singles and compilations
+            const albumsResult = await this.spotifyApi.getArtistAlbums(artist.id, {
+                include_groups: 'album,single,compilation',
+                market: 'US',
+                limit: 50
+            });
+
+            if (albumsResult.body.items.length === 0) {
+                console.log(`ℹ️ No releases found for artist "${artistName}"`);
+                return [];
+            }
+
+            // Filter releases for the specific target date
+            const targetDateReleases = albumsResult.body.items.filter(release => {
+                const releaseDate = release.release_date;
+                // Handle different Spotify date formats
+                let normalizedReleaseDate;
+                
+                if (releaseDate.length === 10) { // YYYY-MM-DD
+                    normalizedReleaseDate = releaseDate;
+                } else if (releaseDate.length === 7) { // YYYY-MM
+                    normalizedReleaseDate = releaseDate + '-01';
+                } else if (releaseDate.length === 4) { // YYYY
+                    normalizedReleaseDate = releaseDate + '-01-01';
+                } else {
+                    return false;
+                }
+
+                return normalizedReleaseDate === targetDate;
+            });
+
+            // Get detailed album information for each release
+            const detailedReleases = [];
+            for (const release of targetDateReleases) {
+                try {
+                    const albumDetails = await this.spotifyApi.getAlbum(release.id);
+                    detailedReleases.push(albumDetails.body);
+                } catch (error) {
+                    console.error(`❌ Error getting details for release ${release.id}:`, error.message);
+                }
+            }
+
+            console.log(`🎵 Found ${detailedReleases.length} releases for ${artistName} on ${targetDate}`);
+            
+            return detailedReleases;
+        } catch (error) {
+            console.error('❌ Error getting artist releases for date:', error.message);
+            return [];
+        }
+    }
+
     async checkForNewRelease(artistName) {
         const latestRelease = await this.getArtistLatestRelease(artistName);
         

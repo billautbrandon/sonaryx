@@ -97,6 +97,63 @@ class DatabaseService {
             return false;
         }
     }
+
+    // Daily release management
+    async storeDailyReleases(date, releases) {
+        try {
+            // First, delete existing releases for this date to replace them
+            await this.prisma.dailyRelease.deleteMany({
+                where: { date }
+            });
+
+            // Store new releases for this date
+            if (releases && releases.length > 0) {
+                await this.prisma.dailyRelease.createMany({
+                    data: releases.map(release => ({
+                        date,
+                        spotifyLink: release.spotifyLink,
+                        artistName: release.artistName,
+                        releaseName: release.releaseName,
+                        releaseId: release.releaseId,
+                        releaseType: release.releaseType,
+                        releaseDate: release.releaseDate
+                    }))
+                });
+                console.log(`✅ Stored ${releases.length} releases for date ${date}`);
+            } else {
+                console.log(`✅ Cleared releases for date ${date} (no new releases)`);
+            }
+        } catch (error) {
+            console.error('❌ Error storing daily releases:', error.message);
+            throw error;
+        }
+    }
+
+    async getDailyReleases(date) {
+        try {
+            const releases = await this.prisma.dailyRelease.findMany({
+                where: { date },
+                orderBy: { createdAt: 'asc' }
+            });
+            return releases;
+        } catch (error) {
+            console.error('❌ Error fetching daily releases:', error.message);
+            throw error;
+        }
+    }
+
+    async getStoredReleaseIds(date) {
+        try {
+            const releases = await this.prisma.dailyRelease.findMany({
+                where: { date },
+                select: { releaseId: true }
+            });
+            return releases.map(r => r.releaseId);
+        } catch (error) {
+            console.error('❌ Error fetching stored release IDs:', error.message);
+            throw error;
+        }
+    }
 }
 
 module.exports = DatabaseService;
