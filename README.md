@@ -7,7 +7,8 @@
 ## ✨ Features
 
 - 🎵 **Artist Subscriptions**: Subscribe to any Spotify artist via Discord commands
-- 🤖 **Discord Slash Commands**: Easy-to-use `/subscribe`, `/subscribe-id`, `/unsubscribe`, and `/list` commands  
+- 🏷️ **Tag Organization**: Organize artists by genre/category (kpop, metal, rock, popular, rap, etc.)
+- 🤖 **Discord Slash Commands**: Easy-to-use `/subscribe`, `/list`, `/tag`, and `/untag` commands  
 - 📅 **Daily Automatic Checks**: Automatically checks for new releases every day at 09:00 UTC
 - 🔄 **Fallback Detection**: Evening fallback check to catch missed releases from previous day
 - 🔍 **Manual Release Checking**: Check all subscribed artists' latest releases on demand
@@ -190,6 +191,36 @@ make db-reset       # Reset database (⚠️ deletes all data)
   - Updates database with current day's releases (replacing previous day)
 - **Discord Output**: Reports missed releases from previous day + any new releases today
 - **Purpose**: Catches releases that were published after the morning check
+
+---
+
+## 🏷️ Tag Organization System
+
+The bot supports organizing artists by tags to make management easier, especially for large collections.
+
+### Tag Examples
+- **kpop**: NewJeans, BLACKPINK, BTS, TWICE
+- **metal**: Metallica, Iron Maiden, Slipknot
+- **rock**: Arctic Monkeys, The Strokes, Red Hot Chili Peppers  
+- **popular**: Taylor Swift, Ariana Grande, Ed Sheeran
+- **rap**: Drake, Kendrick Lamar, Travis Scott
+- **indie**: Clairo, Boy Pablo, Rex Orange County
+
+### Tag Commands
+```bash
+# Subscribe with tags
+/subscribe NewJeans tags:kpop,popular
+/subscribe-id 6HvZYsbFfjnjFrWF950C9d tags:kpop
+
+# Manage existing artists  
+/tag 6HvZYsbFfjnjFrWF950C9d kpop,popular
+/untag 6HvZYsbFfjnjFrWF950C9d
+
+# View organized lists
+/list                    # All artists organized by tags
+/list kpop              # Only K-pop artists
+/list metal             # Only metal artists
+```
 
 ---
 

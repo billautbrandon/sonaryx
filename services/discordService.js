@@ -47,6 +47,11 @@ class DiscordService {
                     option.setName('artist_name')
                         .setDescription('The name of the artist to subscribe to')
                         .setRequired(true)
+                )
+                .addStringOption(option =>
+                    option.setName('tags')
+                        .setDescription('Tags for organization (e.g., "kpop,popular,rock")')
+                        .setRequired(false)
                 ),
             
             new SlashCommandBuilder()
@@ -56,6 +61,11 @@ class DiscordService {
                     option.setName('artist_id')
                         .setDescription('The Spotify ID of the artist (e.g., 28ot3wh4oNmoFOdVajibBl)')
                         .setRequired(true)
+                )
+                .addStringOption(option =>
+                    option.setName('tags')
+                        .setDescription('Tags for organization (e.g., "kpop,popular,rock")')
+                        .setRequired(false)
                 ),
             
             new SlashCommandBuilder()
@@ -70,6 +80,34 @@ class DiscordService {
             new SlashCommandBuilder()
                 .setName('list')
                 .setDescription('List all subscribed artists')
+                .addStringOption(option =>
+                    option.setName('tag')
+                        .setDescription('Filter by tag (leave empty to see all)')
+                        .setRequired(false)
+                ),
+
+            new SlashCommandBuilder()
+                .setName('tag')
+                .setDescription('Add or update tags for an artist')
+                .addStringOption(option =>
+                    option.setName('artist_id')
+                        .setDescription('The Spotify ID of the artist')
+                        .setRequired(true)
+                )
+                .addStringOption(option =>
+                    option.setName('tags')
+                        .setDescription('Tags to set (e.g., "kpop,popular,rock")')
+                        .setRequired(true)
+                ),
+
+            new SlashCommandBuilder()
+                .setName('untag')
+                .setDescription('Remove tags from an artist')
+                .addStringOption(option =>
+                    option.setName('artist_id')
+                        .setDescription('The Spotify ID of the artist')
+                        .setRequired(true)
+                )
         ];
     }
 
@@ -115,6 +153,12 @@ class DiscordService {
                 case 'list':
                     await this.handleListCommand(interaction);
                     break;
+                case 'tag':
+                    await this.handleTagCommand(interaction);
+                    break;
+                case 'untag':
+                    await this.handleUntagCommand(interaction);
+                    break;
                 default:
                     await interaction.editReply('❌ Unknown command');
             }
@@ -132,6 +176,7 @@ class DiscordService {
 
     async handleSubscribeCommand(interaction) {
         const artistName = interaction.options.getString('artist_name');
+        const tags = interaction.options.getString('tags');
         
         try {
             // Search for the artist on Spotify
@@ -152,15 +197,16 @@ class DiscordService {
                 return;
             }
 
-            // Subscribe to the artist
-            await this.databaseService.subscribeToArtist(artist.id, artist.name);
+            // Subscribe to the artist with tags
+            await this.databaseService.subscribeToArtist(artist.id, artist.name, tags);
             console.log(`✅ Subscribed to: ${artist.name}`);
             
+            const tagsDisplay = tags ? `\nTags: ${tags}` : '';
             await interaction.editReply(
                 `Subscribed to ${artist.name}\n` +
                 `\n` +
                 `ID: \`${artist.id}\`\n` +
-                `Followers: ${artist.followers?.total?.toLocaleString() || 'Unknown'}\n` +
+                `Followers: ${artist.followers?.total?.toLocaleString() || 'Unknown'}${tagsDisplay}\n` +
                 `\n` +
                 `Use /list to see all subscriptions.`
             );
@@ -172,6 +218,7 @@ class DiscordService {
 
     async handleSubscribeByIdCommand(interaction) {
         const artistId = interaction.options.getString('artist_id');
+        const tags = interaction.options.getString('tags');
         
         try {
             // Get artist by Spotify ID
@@ -192,15 +239,16 @@ class DiscordService {
                 return;
             }
 
-            // Subscribe to the artist
-            await this.databaseService.subscribeToArtist(artist.id, artist.name);
+            // Subscribe to the artist with tags
+            await this.databaseService.subscribeToArtist(artist.id, artist.name, tags);
             console.log(`✅ Subscribed to: ${artist.name} via ID`);
             
+            const tagsDisplay = tags ? `\nTags: ${tags}` : '';
             await interaction.editReply(
                 `Subscribed to ${artist.name}\n` +
                 `\n` +
                 `ID: \`${artist.id}\`\n` +
-                `Followers: ${artist.followers?.total?.toLocaleString() || 'Unknown'}\n` +
+                `Followers: ${artist.followers?.total?.toLocaleString() || 'Unknown'}${tagsDisplay}\n` +
                 `\n` +
                 `Use /list to see all subscriptions.`
             );
@@ -233,26 +281,145 @@ class DiscordService {
     async handleListCommand(interaction) {
         try {
             console.log('📋 Fetching subscribed artists...');
-            const artists = await this.databaseService.getSubscribedArtists();
+            const filterTag = interaction.options.getString('tag');
+            
+            let artists;
+            if (filterTag) {
+                artists = await this.databaseService.getArtistsByTag(filterTag);
+                console.log(`✅ Found ${artists.length} artists with tag "${filterTag}"`);
+            } else {
+                artists = await this.databaseService.getSubscribedArtists();
+                console.log(`✅ Found ${artists.length} subscribed artists`);
+            }
             
             if (artists.length === 0) {
-                await interaction.editReply('No artists subscribed yet.\n\nUse `/subscribe [artist_name]` to add artists.');
+                const message = filterTag 
+                    ? `No artists found with tag "${filterTag}".\n\nUse \`/list\` to see all artists or use \`/tag\` to add tags to artists.`
+                    : 'No artists subscribed yet.\n\nUse `/subscribe [artist_name]` to add artists.';
+                await interaction.editReply(message);
                 return;
             }
 
-            const artistList = artists.map((artist, index) => 
-                `${index + 1}. **${artist.name}** (\`${artist.id}\`)`
-            ).join('\n');
+            // Group artists by tags
+            const artistsByTag = new Map();
+            const untaggedArtists = [];
 
-            console.log(`✅ Found ${artists.length} subscribed artists`);
-            await interaction.editReply(
-                `Subscribed Artists (${artists.length})\n\n${artistList}\n\n` +
-                `Use /unsubscribe [artist_id] to remove an artist.\n` +
-                `Use \`make check-releases\` in terminal to check for new releases.`
-            );
+            artists.forEach(artist => {
+                if (!artist.tags || artist.tags.trim() === '') {
+                    untaggedArtists.push(artist);
+                } else {
+                    const tags = artist.tags.split(',').map(tag => tag.trim().toLowerCase());
+                    tags.forEach(tag => {
+                        if (!artistsByTag.has(tag)) {
+                            artistsByTag.set(tag, []);
+                        }
+                        artistsByTag.get(tag).push(artist);
+                    });
+                }
+            });
+
+            // Build organized list
+            let output = [];
+            const title = filterTag 
+                ? `Artists with tag "${filterTag}" (${artists.length})`
+                : `Subscribed Artists (${artists.length})`;
+            
+            output.push(`**${title}**\n`);
+
+            if (filterTag) {
+                // If filtering by tag, show simple list
+                const artistList = artists.map((artist, index) => {
+                    const tagsDisplay = artist.tags ? ` • ${artist.tags}` : '';
+                    return `${index + 1}. **${artist.name}** (\`${artist.id}\`)${tagsDisplay}`;
+                }).join('\n');
+                output.push(artistList);
+            } else {
+                // Show organized by tags
+                const sortedTags = Array.from(artistsByTag.keys()).sort();
+                
+                for (const tag of sortedTags) {
+                    const tagArtists = artistsByTag.get(tag);
+                    output.push(`**${tag.toUpperCase()}**`);
+                    tagArtists.forEach((artist, index) => {
+                        output.push(`${index + 1}. **${artist.name}** (\`${artist.id}\`)`);
+                    });
+                    output.push(''); // Empty line between tags
+                }
+
+                if (untaggedArtists.length > 0) {
+                    output.push('**UNTAGGED**');
+                    untaggedArtists.forEach((artist, index) => {
+                        output.push(`${index + 1}. **${artist.name}** (\`${artist.id}\`)`);
+                    });
+                }
+            }
+
+            output.push(`\nUse \`/unsubscribe [artist_id]\` to remove an artist.`);
+            output.push(`Use \`/tag [artist_id] [tags]\` to add tags.`);
+            output.push(`Use \`/list [tag]\` to filter by tag.`);
+
+            await interaction.editReply(output.join('\n'));
         } catch (error) {
             console.error('❌ Error in list command:', error);
             await interaction.editReply(`❌ Error fetching subscriptions: ${error.message}`);
+        }
+    }
+
+    async handleTagCommand(interaction) {
+        const artistId = interaction.options.getString('artist_id');
+        const tags = interaction.options.getString('tags');
+        
+        try {
+            // Check if artist exists in our database
+            const isSubscribed = await this.databaseService.isArtistSubscribed(artistId);
+            if (!isSubscribed) {
+                await interaction.editReply(`❌ Artist ID "${artistId}" is not subscribed.\n\nUse \`/list\` to see subscribed artists.`);
+                return;
+            }
+
+            // Update tags
+            const artist = await this.databaseService.updateArtistTags(artistId, tags);
+            console.log(`✅ Updated tags for artist: ${artist.name}`);
+            
+            await interaction.editReply(
+                `Updated tags for **${artist.name}**\n` +
+                `\n` +
+                `ID: \`${artistId}\`\n` +
+                `Tags: ${tags}\n` +
+                `\n` +
+                `Use \`/list\` to see organized artists.`
+            );
+        } catch (error) {
+            console.error('❌ Error in tag command:', error);
+            await interaction.editReply(`❌ Error updating tags for artist: ${error.message}`);
+        }
+    }
+
+    async handleUntagCommand(interaction) {
+        const artistId = interaction.options.getString('artist_id');
+        
+        try {
+            // Check if artist exists in our database
+            const isSubscribed = await this.databaseService.isArtistSubscribed(artistId);
+            if (!isSubscribed) {
+                await interaction.editReply(`❌ Artist ID "${artistId}" is not subscribed.\n\nUse \`/list\` to see subscribed artists.`);
+                return;
+            }
+
+            // Remove tags
+            const artist = await this.databaseService.updateArtistTags(artistId, null);
+            console.log(`✅ Removed tags for artist: ${artist.name}`);
+            
+            await interaction.editReply(
+                `Removed all tags for **${artist.name}**\n` +
+                `\n` +
+                `ID: \`${artistId}\`\n` +
+                `\n` +
+                `Use \`/tag [artist_id] [tags]\` to add new tags.`
+            );
+        } catch (error) {
+            console.error('❌ Error in untag command:', error);
+            await interaction.editReply(`❌ Error removing tags for artist: ${error.message}`);
         }
     }
 

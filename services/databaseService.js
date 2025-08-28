@@ -21,18 +21,23 @@ class DatabaseService {
     }
 
     // Artist subscription management
-    async subscribeToArtist(artistId, artistName) {
+    async subscribeToArtist(artistId, artistName, tags = null) {
         try {
             const artist = await this.prisma.artist.upsert({
                 where: { id: artistId },
-                update: { name: artistName },
+                update: { 
+                    name: artistName,
+                    tags: tags || undefined // Only update tags if provided
+                },
                 create: {
                     id: artistId,
-                    name: artistName
+                    name: artistName,
+                    tags: tags
                 }
             });
             
-            console.log(`✅ Subscribed to artist: ${artistName} (${artistId})`);
+            const tagsStr = tags ? ` with tags: ${tags}` : '';
+            console.log(`✅ Subscribed to artist: ${artistName} (${artistId})${tagsStr}`);
             return artist;
         } catch (error) {
             console.error('❌ Error subscribing to artist:', error.message);
@@ -151,6 +156,65 @@ class DatabaseService {
             return releases.map(r => r.releaseId);
         } catch (error) {
             console.error('❌ Error fetching stored release IDs:', error.message);
+            throw error;
+        }
+    }
+
+    // Tag management
+    async updateArtistTags(artistId, tags) {
+        try {
+            const artist = await this.prisma.artist.update({
+                where: { id: artistId },
+                data: { tags: tags }
+            });
+            console.log(`✅ Updated tags for ${artist.name}: ${tags || '(no tags)'}`);
+            return artist;
+        } catch (error) {
+            console.error('❌ Error updating artist tags:', error.message);
+            throw error;
+        }
+    }
+
+    async getArtistsByTag(tag) {
+        try {
+            const artists = await this.prisma.artist.findMany({
+                where: {
+                    tags: {
+                        contains: tag
+                    }
+                },
+                orderBy: { createdAt: 'desc' }
+            });
+            return artists;
+        } catch (error) {
+            console.error('❌ Error fetching artists by tag:', error.message);
+            throw error;
+        }
+    }
+
+    async getAllTags() {
+        try {
+            const artists = await this.prisma.artist.findMany({
+                select: { tags: true },
+                where: {
+                    tags: {
+                        not: null
+                    }
+                }
+            });
+            
+            const tagSet = new Set();
+            artists.forEach(artist => {
+                if (artist.tags) {
+                    artist.tags.split(',').forEach(tag => {
+                        tagSet.add(tag.trim().toLowerCase());
+                    });
+                }
+            });
+            
+            return Array.from(tagSet).sort();
+        } catch (error) {
+            console.error('❌ Error fetching all tags:', error.message);
             throw error;
         }
     }

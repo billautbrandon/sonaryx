@@ -49,10 +49,12 @@ async function initializeBot() {
     console.log('🔄 Fallback release checks scheduled for 20:00 UTC (configurable)');
     console.log('🎯 Only shows releases from TODAY!');
     console.log('📝 Available commands:');
-    console.log('   /subscribe [artist_name] - Subscribe to an artist by name');
-    console.log('   /subscribe-id [artist_id] - Subscribe to an artist by Spotify ID');
+    console.log('   /subscribe [artist_name] [tags] - Subscribe to an artist by name (with optional tags)');
+    console.log('   /subscribe-id [artist_id] [tags] - Subscribe to an artist by Spotify ID (with optional tags)');
     console.log('   /unsubscribe [artist_id] - Unsubscribe from an artist');
-    console.log('   /list - List all subscribed artists');
+    console.log('   /list [tag] - List all subscribed artists (optionally filtered by tag)');
+    console.log('   /tag [artist_id] [tags] - Add or update tags for an artist');
+    console.log('   /untag [artist_id] - Remove all tags from an artist');
 }
 
 // Handle graceful shutdown

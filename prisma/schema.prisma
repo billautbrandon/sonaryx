@@ -19,6 +19,7 @@ model Artist {
   id            String   @id // Spotify artist ID
   name          String
   lastReleaseId String?  // Track the last known release
+  tags          String?  // Comma-separated tags for organization (e.g., "kpop,popular")
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
