@@ -1,6 +1,6 @@
 # Sonaryx Bot Makefile
 
-.PHONY: help start stop build up down logs check-releases setup db-setup clean install
+.PHONY: help start stop build up down logs check-releases setup db-setup clean install dump-artists load-artists
 
 # Default target
 help: ## Show this help message
@@ -63,22 +63,63 @@ clean: ## Clean up generated files and containers
 # Database management
 db-reset: ## Reset database (WARNING: This will delete all data!)
 	@echo "⚠️  This will delete all subscribed artists!"
-	@read -p "Are you sure? [y/N] " -n 1 -r; \
-	if [[ $$REPLY =~ ^[Yy]$$ ]]; then \
-		rm -f data/dev.db; \
-		npx prisma db push; \
-		echo "✅ Database reset completed!"; \
-	else \
-		echo "❌ Database reset cancelled."; \
-	fi
+	@printf "Are you sure? [y/N] "; \
+	read REPLY; \
+	case "$$REPLY" in \
+		[Yy]*) rm -f data/dev.db; npx prisma db push; echo "✅ Database reset completed!" ;; \
+		*) echo "❌ Database reset cancelled." ;; \
+	esac
 
 db-studio: ## Open Prisma Studio to view database
 	npx prisma studio
+
+# Artist backup and restore
+dump-artists: ## Create a backup dump of all subscribed artists
+	@echo "📦 Creating artist subscription backup..."
+	docker exec sonaryx-server node scripts/dumpArtists.js
+
+dump-artists-local: ## Create artist backup using local database (for development)
+	@echo "📦 Creating artist subscription backup (local)..."
+	node scripts/dumpArtists.js
+
+load-artists: ## Load artists from the most recent backup dump
+	@echo "📥 Loading artists from backup dump..."
+	@echo "⚠️  This will subscribe to all artists in the dump file."
+	@printf "Continue? [y/N] "; \
+	read REPLY; \
+	case "$$REPLY" in \
+		[Yy]*) docker exec sonaryx-server node scripts/loadArtists.js ;; \
+		*) echo "❌ Artist load cancelled." ;; \
+	esac
+
+load-artists-file: ## Load artists from a specific dump file (Usage: make load-artists-file FILE=path/to/dump.json)
+	@echo "📥 Loading artists from specified file..."
+	@if [ -z "$(FILE)" ]; then \
+		echo "❌ Please specify a file: make load-artists-file FILE=path/to/dump.json"; \
+	else \
+		docker exec sonaryx-server node scripts/loadArtists.js $(FILE); \
+	fi
+
+load-artists-local: ## Load artists using local database (for development)
+	@echo "📥 Loading artists from backup dump (local)..."
+	@echo "⚠️  This will subscribe to all artists in the dump file."
+	@printf "Continue? [y/N] "; \
+	read REPLY; \
+	case "$$REPLY" in \
+		[Yy]*) node scripts/loadArtists.js ;; \
+		*) echo "❌ Artist load cancelled." ;; \
+	esac
+
+dry-run-load: ## Preview what would be loaded from the most recent backup (no changes made)
+	@echo "🧪 Dry run: previewing artist load..."
+	docker exec sonaryx-server node scripts/loadArtists.js --dry-run
 
 # Quick shortcuts
 bot: start ## Alias for 'start'
 releases: check-releases ## Alias for 'check-releases'
 studio: db-studio ## Alias for 'db-studio'
+dump: dump-artists ## Alias for 'dump-artists'
+load: load-artists ## Alias for 'load-artists'
 
 # Docker database management
 docker-db-studio: ## Open Prisma Studio for Docker database

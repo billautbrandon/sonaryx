@@ -11,6 +11,7 @@ services:
       - .env
     volumes:
       - ./logs:/app/logs
+      - ./backups:/app/backups
       - sonaryx_data:/app/data
     networks:
       - sonaryx-network
