@@ -5,6 +5,7 @@ const SpotifyService = require('./services/spotifyService');
 const DatabaseService = require('./services/databaseService');
 const MessageQueueService = require('./services/messageQueueService');
 const ScheduledReleaseService = require('./services/scheduledReleaseService');
+const AutoDumpService = require('./services/autoDumpService');
 
 // Initialize services
 const databaseService = new DatabaseService();
@@ -12,6 +13,7 @@ const spotifyService = new SpotifyService();
 const discordService = new DiscordService(databaseService, spotifyService);
 const messageQueueService = new MessageQueueService(discordService);
 const scheduledReleaseService = new ScheduledReleaseService(databaseService, spotifyService, discordService);
+const autoDumpService = new AutoDumpService(databaseService);
 
 async function initializeBot() {
     console.log('🚀 Starting Sonaryx Bot...');
@@ -21,6 +23,12 @@ async function initializeBot() {
     if (!databaseReady) {
         console.error('❌ Failed to initialize database');
         process.exit(1);
+    }
+
+    // Auto-load latest artist dump on startup
+    if (process.env.AUTO_LOAD_DUMP !== 'false') {
+        console.log('🔄 Auto-loading artist subscriptions...');
+        await autoDumpService.loadLatestDump();
     }
 
     // Initialize Spotify
@@ -48,6 +56,8 @@ async function initializeBot() {
     console.log('📅 Daily release checks scheduled for 09:00 UTC');
     console.log('🔄 Fallback release checks scheduled for 20:00 UTC (configurable)');
     console.log('🎯 Only shows releases from TODAY!');
+    console.log('📦 Auto-dump: Creates backup after each subscription');
+    console.log('📥 Auto-load: Loads latest backup on startup (set AUTO_LOAD_DUMP=false to disable)');
     console.log('📝 Available commands:');
     console.log('   /subscribe [artist_name] [tags] - Subscribe to an artist by name (with optional tags)');
     console.log('   /subscribe-id [artist_id] [tags] - Subscribe to an artist by Spotify ID (with optional tags)');

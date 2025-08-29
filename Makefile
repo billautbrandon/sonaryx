@@ -27,7 +27,7 @@ start: ## Start the Discord bot locally
 build: ## Build Docker image
 	npm run docker:build
 
-up: ## Start Docker containers
+up: ## Start Docker containers with auto-load of latest artist backup
 	npm run docker:up
 
 down: ## Stop Docker containers

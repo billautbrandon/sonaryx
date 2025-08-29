@@ -1,7 +1,9 @@
 const { Client, GatewayIntentBits, SlashCommandBuilder, REST, Routes, EmbedBuilder } = require('discord.js');
+const AutoDumpService = require('./autoDumpService');
 
 class DiscordService {
     constructor(databaseService, spotifyService) {
+        this.autoDumpService = new AutoDumpService(databaseService);
         this.client = new Client({
             intents: [GatewayIntentBits.Guilds]
         });
@@ -201,6 +203,11 @@ class DiscordService {
             await this.databaseService.subscribeToArtist(artist.id, artist.name, tags);
             console.log(`✅ Subscribed to: ${artist.name}`);
             
+            // Create auto-dump after successful subscription
+            setTimeout(async () => {
+                await this.autoDumpService.createAutoDump();
+            }, 1000); // Small delay to ensure transaction is committed
+            
             const tagsDisplay = tags ? `\nTags: ${tags}` : '';
             await interaction.editReply(
                 `Subscribed to ${artist.name}\n` +
@@ -242,6 +249,11 @@ class DiscordService {
             // Subscribe to the artist with tags
             await this.databaseService.subscribeToArtist(artist.id, artist.name, tags);
             console.log(`✅ Subscribed to: ${artist.name} via ID`);
+            
+            // Create auto-dump after successful subscription
+            setTimeout(async () => {
+                await this.autoDumpService.createAutoDump();
+            }, 1000); // Small delay to ensure transaction is committed
             
             const tagsDisplay = tags ? `\nTags: ${tags}` : '';
             await interaction.editReply(
