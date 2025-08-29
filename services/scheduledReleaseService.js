@@ -125,6 +125,12 @@ class ScheduledReleaseService {
             const todayYMD = this.getTodayYMD(tz);
             const cutoffYMD = this.getCutoffYMD(todayYMD, windowDays, tz);
             console.log(`🕒 Date window: cutoff=${cutoffYMD} (windowDays=${windowDays}, tz=${tz})`);
+            
+            // First run fallback check to catch any missed releases from yesterday
+            console.log('\n🔄 Running fallback check for missed releases from yesterday...');
+            await this.performFallbackReleaseCheck();
+            
+            console.log('\n🔍 Now checking for today\'s releases...');
             const artists = await this.databaseService.getSubscribedArtists();
 
             if (artists.length === 0) {
@@ -195,29 +201,41 @@ class ScheduledReleaseService {
                 await new Promise((resolve) => setTimeout(resolve, 1000));
             }
 
-            // Store today's releases (empty if no releases today) to replace yesterday's entry
-            const todayReleases = [];
-            for (const artist of artists) {
-                const todayRelease = await this.checkArtistForTodayReleases(artist, todayYMD);
-                if (todayRelease) {
-                    todayReleases.push(todayRelease);
-                }
-                await new Promise((resolve) => setTimeout(resolve, 1000));
+            // Update database with missed releases from yesterday
+            if (missedReleases.length > 0) {
+                console.log(`📦 Adding ${missedReleases.length} missed releases to database for ${yesterdayYMD}...`);
+                
+                // Get existing releases for yesterday
+                const existingReleases = await this.databaseService.getDailyReleases(yesterdayYMD);
+                
+                // Convert missed releases to database format
+                const missedReleaseData = missedReleases.map(release => ({
+                    spotifyLink: release.link,
+                    artistName: release.artist,
+                    releaseName: release.release.name,
+                    releaseId: release.release.id,
+                    releaseType: release.release.album_type,
+                    releaseDate: release.release.release_date
+                }));
+                
+                // Combine existing releases with missed ones
+                const existingReleaseData = existingReleases.map(release => ({
+                    spotifyLink: release.spotifyLink,
+                    artistName: release.artistName,
+                    releaseName: release.releaseName,
+                    releaseId: release.releaseId,
+                    releaseType: release.releaseType,
+                    releaseDate: release.releaseDate
+                }));
+                
+                const allYesterdayReleases = [...existingReleaseData, ...missedReleaseData];
+                
+                // Update database with complete release list for yesterday
+                await this.databaseService.storeDailyReleases(yesterdayYMD, allYesterdayReleases);
+                console.log(`✅ Updated database with ${allYesterdayReleases.length} total releases for ${yesterdayYMD}`);
             }
 
-            // Update database with today's releases (replacing yesterday's data)
-            const todayReleaseData = todayReleases.map(release => ({
-                spotifyLink: release.link,
-                artistName: release.artist,
-                releaseName: release.release.name,
-                releaseId: release.release.id,
-                releaseType: release.release.album_type,
-                releaseDate: release.release.release_date
-            }));
-            
-            await this.databaseService.storeDailyReleases(todayYMD, todayReleaseData);
-
-            await this.sendFallbackReport(missedReleases, yesterdayYMD, todayReleases, todayYMD, artists.length);
+            await this.sendFallbackReport(missedReleases, yesterdayYMD, artists.length);
             console.log(`✅ Fallback check completed. Found ${missedReleases.length} missed releases from ${yesterdayYMD}.`);
         } catch (error) {
             console.error('❌ Error in fallback release check:', error.message);
@@ -411,7 +429,7 @@ class ScheduledReleaseService {
         }
     }
 
-    async sendFallbackReport(missedReleases, yesterdayYMD, todayReleases, todayYMD, totalArtists) {
+    async sendFallbackReport(missedReleases, yesterdayYMD, totalArtists) {
         const currentDate = new Date().toLocaleDateString('en-US', {
             weekday: 'long',
             year: 'numeric',
@@ -419,7 +437,7 @@ class ScheduledReleaseService {
             day: 'numeric'
         });
 
-        if (missedReleases.length > 0 || todayReleases.length > 0) {
+        if (missedReleases.length > 0) {
             const interestedMembers = (process.env.INTERESTED_MEMBERS || '').trim();
             const interestedMemberIdsRaw = (process.env.INTERESTED_MEMBER_IDS || '').trim();
             const interestedIds = interestedMemberIdsRaw
@@ -435,30 +453,16 @@ class ScheduledReleaseService {
             const header = `:alarm_clock: Fallback Release Report — **${currentDate}**`;
             const metaLines = [];
             
-            if (missedReleases.length > 0) {
-                metaLines.push(`> Missed releases from ${yesterdayYMD}: **${missedReleases.length}**`);
-            }
-            if (todayReleases.length > 0) {
-                metaLines.push(`> New releases today (${todayYMD}): **${todayReleases.length}**`);
-            }
+            metaLines.push(`> Missed releases from ${yesterdayYMD}: **${missedReleases.length}**`);
+            metaLines.push(`> Database updated with missed releases`);
             if (mentionText) {
                 metaLines.push(`> Interested members: ${mentionText}`);
             }
 
             const bodyParts = [];
-            
-            if (missedReleases.length > 0) {
-                bodyParts.push('**Missed Releases:**');
-                const missedLinks = missedReleases.map(r => `* ${r.link}`).join('\n');
-                bodyParts.push(missedLinks);
-            }
-            
-            if (todayReleases.length > 0) {
-                if (missedReleases.length > 0) bodyParts.push(''); // Add spacing
-                bodyParts.push('**Today\'s Releases:**');
-                const todayLinks = todayReleases.map(r => `* ${r.link}`).join('\n');
-                bodyParts.push(todayLinks);
-            }
+            bodyParts.push('**Missed Releases (now added to database):**');
+            const missedLinks = missedReleases.map(r => `* ${r.link}`).join('\n');
+            bodyParts.push(missedLinks);
 
             const combined = [header, '', ...metaLines, '', ...bodyParts].join('\n');
 
@@ -466,10 +470,10 @@ class ScheduledReleaseService {
                 allowedMentions: interestedIds.length > 0 ? { users: interestedIds } : undefined
             });
         } else {
-            // No missed releases and no new releases today
-            const msg = `Fallback check completed.\n\nNo missed releases from ${yesterdayYMD} and no new releases today.`;
+            // No missed releases found
+            const msg = `Fallback check completed.\n\nNo missed releases found from ${yesterdayYMD}.`;
             await this.discordService.sendMessage(msg);
-            console.log(`📭 No missed or new releases - sent fallback notification to Discord`);
+            console.log(`📭 No missed releases found - sent fallback notification to Discord`);
         }
     }
 
