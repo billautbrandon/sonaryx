@@ -126,11 +126,7 @@ class ScheduledReleaseService {
             const cutoffYMD = this.getCutoffYMD(todayYMD, windowDays, tz);
             console.log(`🕒 Date window: cutoff=${cutoffYMD} (windowDays=${windowDays}, tz=${tz})`);
             
-            // First run fallback check to catch any missed releases from yesterday
-            console.log('\n🔄 Running fallback check for missed releases from yesterday...');
-            await this.performFallbackReleaseCheck();
-            
-            console.log('\n🔍 Now checking for today\'s releases...');
+            console.log('🔍 Checking for today\'s releases...');
             const artists = await this.databaseService.getSubscribedArtists();
 
             if (artists.length === 0) {
