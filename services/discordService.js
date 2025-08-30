@@ -340,7 +340,8 @@ class DiscordService {
 
             if (filterTag) {
                 // If filtering by tag, show simple list
-                const artistList = artists.map((artist, index) => {
+                const sortedArtists = artists.sort((a, b) => a.name.localeCompare(b.name));
+                const artistList = sortedArtists.map((artist, index) => {
                     const tagsDisplay = artist.tags ? ` • ${artist.tags}` : '';
                     return `${index + 1}. **${artist.name}** (\`${artist.id}\`)${tagsDisplay}`;
                 }).join('\n');
@@ -350,7 +351,7 @@ class DiscordService {
                 const sortedTags = Array.from(artistsByTag.keys()).sort();
                 
                 for (const tag of sortedTags) {
-                    const tagArtists = artistsByTag.get(tag);
+                    const tagArtists = artistsByTag.get(tag).sort((a, b) => a.name.localeCompare(b.name));
                     output.push(`**${tag.toUpperCase()}**`);
                     tagArtists.forEach((artist, index) => {
                         output.push(`${index + 1}. **${artist.name}** (\`${artist.id}\`)`);
@@ -360,7 +361,8 @@ class DiscordService {
 
                 if (untaggedArtists.length > 0) {
                     output.push('**UNTAGGED**');
-                    untaggedArtists.forEach((artist, index) => {
+                    const sortedUntagged = untaggedArtists.sort((a, b) => a.name.localeCompare(b.name));
+                    sortedUntagged.forEach((artist, index) => {
                         output.push(`${index + 1}. **${artist.name}** (\`${artist.id}\`)`);
                     });
                 }
