@@ -283,6 +283,12 @@ class DiscordService {
             }
 
             console.log(`✅ Unsubscribed from: ${artist.name}`);
+            
+            // Create auto-dump after successful unsubscription
+            setTimeout(async () => {
+                await this.autoDumpService.createAutoDump();
+            }, 1000); // Small delay to ensure transaction is committed
+            
             await interaction.editReply(`Unsubscribed from ${artist.name} (\`${artistId}\`)`);
         } catch (error) {
             console.error('❌ Error in unsubscribe command:', error);
@@ -395,6 +401,11 @@ class DiscordService {
             const artist = await this.databaseService.updateArtistTags(artistId, tags);
             console.log(`✅ Updated tags for artist: ${artist.name}`);
             
+            // Create auto-dump after successful tag update
+            setTimeout(async () => {
+                await this.autoDumpService.createAutoDump();
+            }, 1000); // Small delay to ensure transaction is committed
+            
             await interaction.editReply(
                 `Updated tags for **${artist.name}**\n` +
                 `\n` +
@@ -423,6 +434,11 @@ class DiscordService {
             // Remove tags
             const artist = await this.databaseService.updateArtistTags(artistId, null);
             console.log(`✅ Removed tags for artist: ${artist.name}`);
+            
+            // Create auto-dump after successful tag removal
+            setTimeout(async () => {
+                await this.autoDumpService.createAutoDump();
+            }, 1000); // Small delay to ensure transaction is committed
             
             await interaction.editReply(
                 `Removed all tags for **${artist.name}**\n` +
