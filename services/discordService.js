@@ -378,11 +378,111 @@ class DiscordService {
             output.push(`Use \`/tag [artist_id] [tags]\` to add tags.`);
             output.push(`Use \`/list [tag]\` to filter by tag.`);
 
-            await interaction.editReply(output.join('\n'));
+            // Send the message, splitting if too long
+            await this.sendLongMessage(interaction, output.join('\n'));
         } catch (error) {
             console.error('❌ Error in list command:', error);
             await interaction.editReply(`❌ Error fetching subscriptions: ${error.message}`);
         }
+    }
+
+    // Helper method to handle long messages by splitting them
+    async sendLongMessage(interaction, content, maxLength = 2000) {
+        if (content.length <= maxLength) {
+            await interaction.editReply(content);
+            return;
+        }
+
+        // Split content into chunks
+        const chunks = this.splitMessageContent(content, maxLength);
+        
+        // Send first chunk as editReply
+        await interaction.editReply(chunks[0]);
+        
+        // Send remaining chunks as followUp messages
+        for (let i = 1; i < chunks.length; i++) {
+            await interaction.followUp(chunks[i]);
+            // Small delay to avoid rate limiting
+            await new Promise(resolve => setTimeout(resolve, 100));
+        }
+    }
+
+    // Split message content intelligently at good breakpoints
+    splitMessageContent(content, maxLength = 2000) {
+        const chunks = [];
+        let currentChunk = '';
+        const lines = content.split('\n');
+        
+        for (const line of lines) {
+            // If adding this line would exceed the limit
+            if ((currentChunk + '\n' + line).length > maxLength) {
+                // If we have content in current chunk, save it
+                if (currentChunk) {
+                    chunks.push(currentChunk.trim());
+                    currentChunk = '';
+                }
+                
+                // If a single line is too long, we need to break it
+                if (line.length > maxLength) {
+                    const brokenLines = this.breakLongLine(line, maxLength);
+                    for (let i = 0; i < brokenLines.length; i++) {
+                        if (i === brokenLines.length - 1) {
+                            // Last piece goes to current chunk
+                            currentChunk = brokenLines[i];
+                        } else {
+                            // Other pieces become their own chunks
+                            chunks.push(brokenLines[i]);
+                        }
+                    }
+                } else {
+                    currentChunk = line;
+                }
+            } else {
+                // Add line to current chunk
+                if (currentChunk) {
+                    currentChunk += '\n' + line;
+                } else {
+                    currentChunk = line;
+                }
+            }
+        }
+        
+        // Add remaining content
+        if (currentChunk) {
+            chunks.push(currentChunk.trim());
+        }
+        
+        return chunks;
+    }
+
+    // Break a single long line into smaller pieces
+    breakLongLine(line, maxLength) {
+        const pieces = [];
+        let remaining = line;
+        
+        while (remaining.length > maxLength) {
+            // Find a good break point (space, comma, etc.)
+            let breakPoint = maxLength;
+            const substring = remaining.substring(0, maxLength);
+            const lastSpace = substring.lastIndexOf(' ');
+            const lastComma = substring.lastIndexOf(',');
+            const lastDash = substring.lastIndexOf('-');
+            
+            // Use the latest good break point
+            const breakPoints = [lastSpace, lastComma, lastDash].filter(p => p > maxLength * 0.7);
+            if (breakPoints.length > 0) {
+                breakPoint = Math.max(...breakPoints) + 1;
+            }
+            
+            pieces.push(remaining.substring(0, breakPoint).trim());
+            remaining = remaining.substring(breakPoint).trim();
+        }
+        
+        if (remaining) {
+            pieces.push(remaining);
+        }
+        
+        return pieces;
     }
 
     async handleTagCommand(interaction) {
